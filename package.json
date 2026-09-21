@@ -1,7 +1,7 @@
 {
   "name": "smart-ai",
-  "version": "2.0.0",
-  "description": "Smart AI - Multi-user AI Assistant powered by Gemini and Supabase",
+  "version": "3.0.0",
+  "description": "Smart AI - Multi-user AI Assistant with file support",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
