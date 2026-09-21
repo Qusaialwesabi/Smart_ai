@@ -3,6 +3,7 @@ const express = require('express');
 const fetch = require('node-fetch');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const multer = require('multer');
 const helmet = require('helmet');
 const compression = require('compression');
 const { createClient } = require('@supabase/supabase-js');
@@ -10,76 +11,237 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- Supabase Setup ---
+// ============================================
+// SUPABASE
+// ============================================
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || '').trim();
 const supabaseServiceKey = (process.env.SUPABASE_SERVICE_KEY || '').trim();
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Warning: SUPABASE_URL or SUPABASE_ANON_KEY is not set.');
-}
-if (!process.env.GEMINI_API_KEY) {
-  console.warn('Warning: GEMINI_API_KEY is not set.');
+  console.warn('⚠️  SUPABASE_URL or SUPABASE_ANON_KEY not set.');
 }
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// --- Security & Performance Middleware ---
-app.use(helmet({
-  contentSecurityPolicy: false, // Disabled for simplicity with CDN scripts
+// ============================================
+// GEMINI KEY POOL (Unlimited Keys)
+// ============================================
+const rawKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '').trim();
+const GEMINI_KEYS = rawKeys.split(',').map(k => k.trim()).filter(Boolean);
+
+// Support numbered keys: GEMINI_API_KEY_1, GEMINI_API_KEY_2, ...
+for (let i = 1; i <= 500; i++) {
+  const k = (process.env['GEMINI_API_KEY_' + i] || '').trim();
+  if (k) GEMINI_KEYS.push(k);
+}
+
+const MODEL = 'gemini-3.5-flash-lite';
+const IMAGE_MODEL = 'gemini-2.5-flash-image';
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
+const GEMINI_PATH = `/v1beta/models/${MODEL}:generateContent`;
+const IMAGE_PATH = `/v1beta/models/${IMAGE_MODEL}:generateContent`;
+
+if (GEMINI_KEYS.length === 0) {
+  console.warn('⚠️  No Gemini API keys found.');
+} else {
+  console.log(`✅ Loaded ${GEMINI_KEYS.length} Gemini API key(s).`);
+}
+
+// Key state tracking
+const keyStates = GEMINI_KEYS.map((key, idx) => ({
+  key, idx,
+  exhaustedUntil: 0,
+  successCount: 0,
+  failCount: 0,
+  lastUsed: 0,
 }));
-app.use(compression());
-app.use(express.json({ limit: '5mb' }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
 
-// --- Gemini API with Retry Logic ---
-const API_KEY = (process.env.GEMINI_API_KEY || '').trim();
-const MODEL = 'gemini-3.5-flash-lite'; // الأسرع والأكثر استقراراً
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+function pickKey() {
+  const now = Date.now();
+  const available = keyStates.filter(k => k.exhaustedUntil <= now);
+  if (available.length === 0) return null;
+  available.sort((a, b) => a.lastUsed - b.lastUsed);
+  return available[0];
+}
 
-async function callGemini(messages, retries = 2) {
-  for (let i = 0; i <= retries; i++) {
+async function callGemini(contents, endpoint = GEMINI_PATH, retries = 2) {
+  if (GEMINI_KEYS.length === 0) throw new Error('No API keys configured.');
+
+  const maxAttempts = GEMINI_KEYS.length + retries;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const state = pickKey();
+    if (!state) {
+      const soonest = Math.min(...keyStates.map(k => k.exhaustedUntil));
+      const waitSec = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
+      throw new Error(`All keys exhausted. Retry in ~${waitSec}s.`);
+    }
+
+    state.lastUsed = Date.now();
+    const url = `${GEMINI_BASE}${endpoint}?key=${state.key}`;
+
     try {
-      const res = await fetch(GEMINI_URL, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: messages }),
+        body: JSON.stringify({ contents }),
       });
+
+      if (res.status === 429) {
+        const body = await res.text();
+        let retrySec = 60;
+        try {
+          const j = JSON.parse(body);
+          const retryInfo = (j.error?.details || []).find(d => d['@type']?.includes('RetryInfo'));
+          if (retryInfo?.retryDelay) {
+            const m = String(retryInfo.retryDelay).match(/(\d+)/);
+            if (m) retrySec = parseInt(m[1], 10) + 5;
+          }
+        } catch (_) {}
+        state.exhaustedUntil = Date.now() + retrySec * 1000;
+        state.failCount++;
+        console.warn(`🔴 Key #${state.idx + 1} quota reached. Cooldown ${retrySec}s.`);
+        continue;
+      }
+
+      if (res.status === 503 || res.status === 500) {
+        state.exhaustedUntil = Date.now() + 15 * 1000;
+        state.failCount++;
+        continue;
+      }
 
       if (!res.ok) {
         const errText = await res.text();
-        // If it's a rate limit (429), don't retry, just throw
-        if (res.status === 429) throw new Error('rate_limit');
-        console.error(`Gemini API error (attempt ${i + 1}):`, errText);
-        throw new Error('api_error');
+        console.error(`Gemini error (key #${state.idx + 1}, ${res.status}):`, errText.slice(0, 200));
+        state.failCount++;
+        continue;
       }
 
       const data = await res.json();
-      const parts = data.candidates?.[0]?.content?.parts || [];
-      const text = parts.map((p) => p.text || '').join('\n').trim();
-
-      if (text) return text;
-
-      // If text is empty, wait and retry
-      console.warn(`Empty response from Gemini (attempt ${i + 1}). Retrying...`);
-      if (i < retries) await new Promise(r => setTimeout(r, 1500 * (i + 1)));
-      
+      state.successCount++;
+      return data;
     } catch (err) {
-      if (err.message === 'rate_limit') throw err; // Don't retry on rate limit
-      console.error(`Attempt ${i + 1} failed:`, err.message);
-      if (i === retries) throw err;
-      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+      state.exhaustedUntil = Date.now() + 10 * 1000;
+      state.failCount++;
+      continue;
     }
   }
-  throw new Error('Max retries reached with empty response.');
+
+  throw new Error('All attempts failed.');
 }
 
-// --- Auth Helpers ---
+function extractText(data) {
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  return parts.map(p => p.text || '').filter(Boolean).join('\n').trim();
+}
+
+// ============================================
+// GEMINI FILE API (for uploads)
+// ============================================
+function pickFileKey() {
+  const now = Date.now();
+  const available = keyStates.filter(k => k.exhaustedUntil <= now);
+  if (available.length === 0) return null;
+  return available[0];
+}
+
+async function uploadToGemini(buffer, mimeType, displayName) {
+  const state = pickFileKey();
+  if (!state) throw new Error('No API keys available for upload.');
+
+  const startUrl = `${GEMINI_BASE}/upload/v1beta/files?key=${state.key}`;
+
+  const startRes = await fetch(startUrl, {
+    method: 'POST',
+    headers: {
+      'X-Goog-Upload-Protocol': 'resumable',
+      'X-Goog-Upload-Command': 'start',
+      'X-Goog-Upload-Header-Content-Length': buffer.length.toString(),
+      'X-Goog-Upload-Header-Content-Type': mimeType,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ file: { display_name: displayName || 'upload' } }),
+  });
+
+  if (!startRes.ok) {
+    const err = await startRes.text();
+    console.error('File start error:', err.slice(0, 300));
+    throw new Error('Failed to start file upload');
+  }
+
+  const uploadUrl = startRes.headers.get('X-Goog-Upload-URL');
+  if (!uploadUrl) throw new Error('No upload URL');
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Length': buffer.length.toString(),
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize',
+    },
+    body: buffer,
+  });
+
+  if (!uploadRes.ok) {
+    const err = await uploadRes.text();
+    console.error('File upload error:', err.slice(0, 300));
+    throw new Error('Failed to upload file');
+  }
+
+  const fileInfo = await uploadRes.json();
+  return fileInfo.file;
+}
+
+async function waitForFileActive(fileName, maxWaitMs = 60000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const state = pickFileKey();
+    if (!state) throw new Error('No keys available');
+    const res = await fetch(`${GEMINI_BASE}/v1beta/${fileName}?key=${state.key}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.state === 'ACTIVE') return data;
+      if (data.state === 'FAILED') throw new Error('File processing failed');
+    }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  throw new Error('File processing timeout');
+}
+
+function getMimeCategory(mimeType) {
+  if (!mimeType) return 'unknown';
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'audio';
+  if (mimeType.includes('pdf')) return 'pdf';
+  if (mimeType.includes('word') || mimeType.includes('document')) return 'document';
+  if (mimeType.includes('text') || mimeType.includes('json') || mimeType.includes('csv')) return 'text';
+  if (mimeType.includes('sheet') || mimeType.includes('excel')) return 'spreadsheet';
+  return 'other';
+}
+
+// ============================================
+// MIDDLEWARE
+// ============================================
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 },
+});
+
+// ============================================
+// AUTH HELPERS
+// ============================================
 function getAccessToken(req) {
-  if (req.cookies && req.cookies.sb_access_token) return req.cookies.sb_access_token;
+  if (req.cookies?.sb_access_token) return req.cookies.sb_access_token;
   const auth = req.headers.authorization || '';
   if (auth.startsWith('Bearer ')) return auth.slice(7);
   return null;
@@ -90,11 +252,9 @@ async function getAuthenticatedUser(req) {
   if (!token) return null;
   try {
     const { data, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !data || !data.user) return null;
+    if (error || !data?.user) return null;
     return data.user;
-  } catch (e) {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function requireAuth(req, res, next) {
@@ -104,11 +264,9 @@ async function requireAuth(req, res, next) {
   next();
 }
 
-// ============================
+// ============================================
 // AUTH ROUTES
-// ============================
-
-// Email/Password Signup
+// ============================================
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -134,7 +292,6 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
-// Email/Password Login
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -154,26 +311,18 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Google OAuth Login
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { access_token, refresh_token } = req.body;
     if (!access_token) return res.status(400).json({ error: 'Access token required.' });
 
-    const { data, error } = await supabaseAdmin.auth.setSession({
-      access_token,
-      refresh_token,
-    });
-
-    if (error || !data.session) {
-      return res.status(400).json({ error: 'Invalid Google session.' });
-    }
+    const { data, error } = await supabaseAdmin.auth.setSession({ access_token, refresh_token });
+    if (error || !data.session) return res.status(400).json({ error: 'Invalid Google session.' });
 
     res.cookie('sb_access_token', data.session.access_token, {
       httpOnly: true, secure: true, sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-
     res.json({ user: { id: data.user.id, email: data.user.email } });
   } catch (err) {
     console.error('Google auth error:', err.message);
@@ -181,20 +330,104 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// Logout
 app.post('/api/auth/logout', (req, res) => {
   res.clearCookie('sb_access_token', { sameSite: 'none', secure: true });
   res.json({ success: true });
 });
 
-// Current User
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: { id: req.user.id, email: req.user.email } });
 });
 
-// ============================
-// CONVERSATIONS ROUTES
-// ============================
+// ============================================
+// FILE UPLOAD
+// ============================================
+app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file received.' });
+
+    const { buffer, mimetype, originalname, size } = req.file;
+
+    if (size > 100 * 1024 * 1024) {
+      return res.status(400).json({ error: 'File too large. Max 100MB.' });
+    }
+
+    const category = getMimeCategory(mimetype);
+    console.log(`📤 Uploading: ${originalname} (${mimetype}, ${(size/1024/1024).toFixed(2)}MB)`);
+
+    const fileInfo = await uploadToGemini(buffer, mimetype, originalname);
+    const activeFile = await waitForFileActive(fileInfo.name);
+
+    res.json({
+      success: true,
+      file: {
+        name: activeFile.name,
+        uri: activeFile.uri,
+        mimeType: activeFile.mimeType,
+        sizeBytes: activeFile.sizeBytes,
+        displayName: originalname,
+        category,
+      },
+    });
+  } catch (err) {
+    console.error('Upload error:', err.message);
+    res.status(500).json({ error: 'Failed to upload file. Please try again.' });
+  }
+});
+
+// ============================================
+// IMAGE GENERATION
+// ============================================
+app.post('/api/generate-image', requireAuth, async (req, res) => {
+  try {
+    const { prompt, baseImage } = req.body;
+
+    if (!prompt?.trim() && !baseImage) {
+      return res.status(400).json({ error: 'Prompt required.' });
+    }
+
+    const parts = [];
+    if (baseImage?.data && baseImage?.mimeType) {
+      parts.push({
+        inlineData: { mimeType: baseImage.mimeType, data: baseImage.data },
+      });
+    }
+    if (prompt?.trim()) parts.push({ text: prompt.trim() });
+
+    console.log(`🎨 Generating image: "${prompt?.slice(0, 60)}..."`);
+
+    const data = await callGemini([{ parts }], IMAGE_PATH);
+    const responseParts = data.candidates?.[0]?.content?.parts || [];
+
+    const imagePart = responseParts.find(p => p.inlineData);
+    const textPart = responseParts.find(p => p.text);
+
+    if (!imagePart) {
+      return res.status(500).json({
+        error: textPart?.text || 'لم يتم توليد صورة.',
+      });
+    }
+
+    res.json({
+      success: true,
+      image: {
+        mimeType: imagePart.inlineData.mimeType,
+        data: imagePart.inlineData.data,
+      },
+      text: textPart?.text || '',
+    });
+  } catch (err) {
+    console.error('Image gen error:', err.message);
+    if (err.message.includes('exhausted')) {
+      return res.status(429).json({ error: 'تم استهلاك الحد اليومي. حاول لاحقاً.' });
+    }
+    res.status(500).json({ error: 'فشل توليد الصورة. حاول لاحقاً.' });
+  }
+});
+
+// ============================================
+// CONVERSATIONS
+// ============================================
 app.get('/api/conversations', requireAuth, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
@@ -205,7 +438,6 @@ app.get('/api/conversations', requireAuth, async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     res.json({ conversations: data || [] });
   } catch (err) {
-    console.error('List conversations error:', err.message);
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
@@ -216,12 +448,10 @@ app.post('/api/conversations', requireAuth, async (req, res) => {
     const { data, error } = await supabaseAdmin
       .from('conversations')
       .insert({ user_id: req.user.id, title: title || 'New Chat' })
-      .select()
-      .single();
+      .select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ conversation: data });
   } catch (err) {
-    console.error('Create conversation error:', err.message);
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
@@ -230,19 +460,15 @@ app.patch('/api/conversations/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { title } = req.body;
-    if (!title || !title.trim()) return res.status(400).json({ error: 'Title required.' });
-
+    if (!title?.trim()) return res.status(400).json({ error: 'Title required.' });
     const { data, error } = await supabaseAdmin
       .from('conversations')
       .update({ title: title.trim(), updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .eq('user_id', req.user.id)
-      .select()
-      .single();
+      .eq('id', id).eq('user_id', req.user.id)
+      .select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ conversation: data });
   } catch (err) {
-    console.error('Rename conversation error:', err.message);
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
@@ -252,17 +478,17 @@ app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
     const { id } = req.params;
     const { error } = await supabaseAdmin
       .from('conversations')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', req.user.id);
+      .delete().eq('id', id).eq('user_id', req.user.id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   } catch (err) {
-    console.error('Delete conversation error:', err.message);
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
 
+// ============================================
+// MESSAGES
+// ============================================
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -273,13 +499,12 @@ app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 
     const { data, error } = await supabaseAdmin
       .from('messages')
-      .select('id, role, content, created_at')
+      .select('id, role, content, created_at, attachment, image_url')
       .eq('conversation_id', id)
       .order('created_at', { ascending: true });
     if (error) return res.status(500).json({ error: error.message });
     res.json({ messages: data || [] });
   } catch (err) {
-    console.error('List messages error:', err.message);
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
@@ -287,43 +512,66 @@ app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { content } = req.body;
-    if (!content || !content.trim()) return res.status(400).json({ error: 'Message required.' });
+    const { content, attachment } = req.body;
+
+    if ((!content || !content.trim()) && !attachment) {
+      return res.status(400).json({ error: 'Message or attachment required.' });
+    }
 
     const { data: conv, error: convErr } = await supabaseAdmin
       .from('conversations')
       .select('id, title')
-      .eq('id', id)
-      .eq('user_id', req.user.id)
-      .single();
+      .eq('id', id).eq('user_id', req.user.id).single();
     if (convErr || !conv) return res.status(404).json({ error: 'Conversation not found.' });
 
+    const userMsgContent = (content || '').trim();
     const { data: userMsg, error: userErr } = await supabaseAdmin
       .from('messages')
-      .insert({ conversation_id: id, role: 'user', content: content.trim() })
-      .select()
-      .single();
+      .insert({
+        conversation_id: id,
+        role: 'user',
+        content: userMsgContent,
+        attachment: attachment || null,
+      })
+      .select().single();
     if (userErr) return res.status(500).json({ error: userErr.message });
 
+    // Load history
     const { data: history } = await supabaseAdmin
       .from('messages')
-      .select('role, content')
+      .select('role, content, attachment')
       .eq('conversation_id', id)
       .order('created_at', { ascending: true })
-      .limit(30);
+      .limit(20);
 
-    const geminiMessages = (history || []).map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
+    // Build Gemini contents
+    const geminiContents = (history || []).map(m => {
+      const parts = [];
+
+      if (m.attachment?.uri && m.attachment?.mimeType) {
+        parts.push({
+          fileData: { fileUri: m.attachment.uri, mimeType: m.attachment.mimeType },
+        });
+      }
+
+      if (m.content) parts.push({ text: m.content });
+      if (parts.length === 0) parts.push({ text: '(empty)' });
+
+      return {
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts,
+      };
+    });
 
     let aiText = '';
     try {
-      aiText = await callGemini(geminiMessages);
+      const response = await callGemini(geminiContents);
+      aiText = extractText(response);
+      if (!aiText) aiText = '⚠️ لم يتم استلام رد. حاول مرة أخرى.';
     } catch (e) {
       console.error('Gemini error:', e.message);
-      if (e.message === 'rate_limit') {
-        aiText = '⚠️ الحد اليومي للطلبات قد انتهى. حاول مرة أخرى لاحقاً.';
+      if (e.message.includes('exhausted')) {
+        aiText = '⚠️ تم استهلاك الحد اليومي. حاول لاحقاً.';
       } else {
         aiText = '⚠️ حدث خطأ مؤقت. حاول مرة أخرى.';
       }
@@ -332,21 +580,43 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     const { data: aiMsg, error: aiErr } = await supabaseAdmin
       .from('messages')
       .insert({ conversation_id: id, role: 'assistant', content: aiText })
-      .select()
-      .single();
+      .select().single();
     if (aiErr) return res.status(500).json({ error: aiErr.message });
 
     const updates = { updated_at: new Date().toISOString() };
     if (conv.title === 'New Chat') {
-      updates.title = content.trim().slice(0, 40) + (content.length > 40 ? '...' : '');
+      if (userMsgContent) {
+        updates.title = userMsgContent.slice(0, 40) + (userMsgContent.length > 40 ? '...' : '');
+      } else if (attachment?.displayName) {
+        updates.title = attachment.displayName.slice(0, 40);
+      }
     }
     await supabaseAdmin.from('conversations').update(updates).eq('id', id);
 
-    res.json({ userMessage: userMsg, aiMessage: aiMsg, conversationTitle: updates.title || conv.title });
+    res.json({
+      userMessage: userMsg,
+      aiMessage: aiMsg,
+      conversationTitle: updates.title || conv.title,
+    });
   } catch (err) {
     console.error('Send message error:', err.message);
     res.status(500).json({ error: 'Something went wrong.' });
   }
+});
+
+// ============================================
+// KEYS STATUS
+// ============================================
+app.get('/api/keys-status', requireAuth, (req, res) => {
+  const now = Date.now();
+  const status = keyStates.map(k => ({
+    index: k.idx + 1,
+    available: k.exhaustedUntil <= now,
+    cooldownSec: Math.max(0, Math.ceil((k.exhaustedUntil - now) / 1000)),
+    successCount: k.successCount,
+    failCount: k.failCount,
+  }));
+  res.json({ totalKeys: GEMINI_KEYS.length, status });
 });
 
 app.get('*', (req, res) => {
@@ -354,6 +624,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Smart AI running on http://localhost:${PORT}`);
-  console.log(`🔑 Gemini API Key: ${API_KEY ? 'Loaded' : 'MISSING'}`);
+  console.log(`🚀 Smart AI running on http://localhost:${PORT}`);
+  console.log(`🔑 Gemini keys loaded: ${GEMINI_KEYS.length}`);
+  console.log(`📦 Model: ${MODEL} | Image: ${IMAGE_MODEL}`);
 });
