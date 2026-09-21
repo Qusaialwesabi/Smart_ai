@@ -1,16 +1,405 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+<meta name="theme-color" content="#0f172a" />
+<title>Smart AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: 'Cairo', sans-serif; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #0f172a; }
+  ::-webkit-scrollbar-thumb { background: #4c1d95; border-radius: 4px; }
+  .ai-gradient { background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%); }
+  .glow { box-shadow: 0 0 25px rgba(168, 85, 247, 0.4); }
+  .glow-sm { box-shadow: 0 0 15px rgba(168, 85, 247, 0.25); }
+  #sidebar { right: 0; transform: translateX(100%); transition: transform 0.3s ease; }
+  #sidebar.open { transform: translateX(0); }
+  body[dir="ltr"] #sidebar { right: auto; left: 0; border-left: none; border-right: 1px solid #1e293b; transform: translateX(-100%); }
+  body[dir="ltr"] #sidebar.open { transform: translateX(0); }
+  @media (min-width: 768px) {
+    #sidebar, body[dir="ltr"] #sidebar { transform: translateX(0) !important; position: relative !important; }
+  }
+  .msg-body h1, .msg-body h2, .msg-body h3 { margin: 12px 0 6px; font-weight: 700; color: #a855f7; }
+  .msg-body p { margin-bottom: 10px; }
+  .msg-body ul, .msg-body ol { margin: 6px 0 12px 20px; }
+  body[dir="rtl"] .msg-body ul, body[dir="rtl"] .msg-body ol { margin: 6px 20px 12px 0; }
+  .msg-body strong { color: #c084fc; font-weight: 700; }
+  .msg-body code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.88em; color: #e9d5ff; direction: ltr; }
+  .msg-body pre { background: #0b1220; padding: 14px; border-radius: 10px; overflow-x: auto; margin: 10px 0; font-size: 0.82rem; white-space: pre; direction: ltr; text-align: left; border: 1px solid #334155; }
+  .msg-body pre code { background: none; padding: 0; color: #e2e8f0; display: block; font-family: monospace; }
+  .msg-body img { max-width: 100%; border-radius: 10px; }
+  .typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+  .typing span { width: 8px; height: 8px; border-radius: 50%; background: #a855f7; animation: typing 1.4s infinite; opacity: 0.4; }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes typing { 0%, 60%, 100% { opacity: 0.4; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-4px); } }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 40; display: none; }
+  .sidebar-overlay.show { display: block; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .attachment-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 100px; background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.3); color: #e9d5ff; font-size: 0.8rem; margin-bottom: 8px; }
+  .attachment-pill button { background: none; border: none; color: #f87171; cursor: pointer; padding: 0; }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased overflow-hidden">
+
+<!-- AUTH -->
+<div id="authScreen" class="min-h-screen flex items-center justify-center p-5 relative overflow-y-auto">
+  <div class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+  <div class="relative w-full max-w-md bg-slate-900/70 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 shadow-2xl z-10 fade-in">
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl ai-gradient glow mb-4">
+        <i class="fa-solid fa-brain text-white text-2xl"></i>
+      </div>
+      <h1 class="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-white via-purple-200 to-purple-400 mb-1">Smart AI</h1>
+      <p id="authSubtitle" class="text-slate-400 text-sm">مساعدك الذكي متعدد المحادثات</p>
+    </div>
+    <div class="flex bg-slate-800/60 rounded-xl p-1 mb-6">
+      <button id="tabLogin" class="auth-tab flex-1 py-2.5 rounded-lg text-sm font-bold text-white bg-slate-900 shadow-md transition" data-tab="login">
+        <i class="fa-solid fa-right-to-bracket ml-1"></i><span id="tabLoginText">تسجيل الدخول</span>
+      </button>
+      <button id="tabSignup" class="auth-tab flex-1 py-2.5 rounded-lg text-sm font-bold text-slate-400 transition" data-tab="signup">
+        <i class="fa-solid fa-user-plus ml-1"></i><span id="tabSignupText">حساب جديد</span>
+      </button>
+    </div>
+    <div id="authError" class="hidden bg-rose-950/50 border border-rose-800/50 text-rose-300 text-sm rounded-xl p-3 mb-4"></div>
+    <form id="authForm" class="space-y-4">
+      <div>
+        <label id="emailLabel" class="block text-xs font-semibold text-slate-400 mb-2">البريد الإلكتروني</label>
+        <input type="email" id="email" required autocomplete="email"
+          class="w-full bg-slate-800/60 border border-slate-700 focus:border-purple-500 rounded-xl py-3 px-4 text-sm text-white placeholder-slate-500 outline-none transition"
+          placeholder="you@example.com" />
+      </div>
+      <div>
+        <label id="passwordLabel" class="block text-xs font-semibold text-slate-400 mb-2">كلمة المرور</label>
+        <input type="password" id="password" required minlength="8" autocomplete="current-password"
+          class="w-full bg-slate-800/60 border border-slate-700 focus:border-purple-500 rounded-xl py-3 px-4 text-sm text-white placeholder-slate-500 outline-none transition"
+          placeholder="••••••••" />
+      </div>
+      <button type="submit" id="authSubmit"
+        class="w-full ai-gradient glow text-white font-bold py-3.5 rounded-xl hover:scale-[1.02] transition disabled:opacity-60">
+        <span id="authSubmitText">تسجيل الدخول</span>
+      </button>
+    </form>
+    <div class="flex items-center gap-3 my-5 text-slate-500 text-xs">
+      <div class="flex-1 h-px bg-slate-800"></div>
+      <span id="dividerText">أو</span>
+      <div class="flex-1 h-px bg-slate-800"></div>
+    </div>
+    <button id="googleBtn"
+      class="w-full bg-white hover:bg-slate-100 text-slate-800 font-bold py-3 rounded-xl flex items-center justify-center gap-3 transition">
+      <svg width="20" height="20" viewBox="0 0 24 24">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+      </svg>
+      <span id="googleBtnText">المتابعة باستخدام Google</span>
+    </button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appScreen" class="hidden h-screen w-screen overflow-hidden flex">
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <aside id="sidebar" class="fixed md:relative top-0 bottom-0 w-[290px] bg-slate-900 border-l border-slate-800 flex flex-col z-50">
+    <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-800">
+      <div class="w-10 h-10 rounded-xl ai-gradient flex items-center justify-center glow-sm">
+        <i class="fa-solid fa-brain text-white"></i>
+      </div>
+      <span class="text-lg font-black bg-clip-text text-transparent bg-gradient-to-r from-white via-purple-200 to-purple-400">Smart AI</span>
+      <button class="md:hidden mr-auto text-slate-400 p-1" id="closeSidebarBtn"><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <div class="p-4">
+      <button id="newChatBtn" class="w-full ai-gradient glow-sm text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:scale-[1.02] transition">
+        <i class="fa-solid fa-plus"></i><span id="newChatText">محادثة جديدة</span>
+      </button>
+    </div>
+    <div id="convList" class="flex-1 overflow-y-auto px-2 pb-2"></div>
+    <div class="border-t border-slate-800 p-3 flex items-center gap-3">
+      <div id="userAvatar" class="w-9 h-9 rounded-full ai-gradient flex items-center justify-center text-white font-bold text-sm shrink-0">U</div>
+      <div class="flex-1 min-w-0"><div id="userEmail" class="text-xs text-slate-400 truncate">-</div></div>
+      <button id="logoutBtn" class="text-slate-400 hover:text-rose-400 p-2 rounded-lg transition"><i class="fa-solid fa-right-from-bracket"></i></button>
+    </div>
+  </aside>
+  <div class="flex-1 flex flex-col h-screen min-w-0 bg-slate-950">
+    <div class="flex items-center gap-3 px-5 py-3.5 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md">
+      <button id="menuToggle" class="md:hidden text-slate-300 p-1"><i class="fa-solid fa-bars text-lg"></i></button>
+      <div id="chatTitle" class="flex-1 font-bold text-sm text-slate-200 truncate">Smart AI</div>
+      <button id="langToggle" class="w-9 h-9 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold transition"><i class="fa-solid fa-language"></i></button>
+    </div>
+    <div id="chatMessages" class="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-6 space-y-5"></div>
+    <div class="px-4 md:px-6 py-4 bg-slate-950">
+      <div id="pendingAttachWrap" class="max-w-4xl mx-auto mb-2 hidden"></div>
+      <div class="max-w-4xl mx-auto flex items-end gap-2 bg-slate-900 border border-slate-700 focus-within:border-purple-500 rounded-2xl px-3 py-2 transition">
+        <button id="imgGenBtn" class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 text-white flex items-center justify-center hover:scale-105 transition"><i class="fa-solid fa-image"></i></button>
+        <button id="fileBtn" class="shrink-0 w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center transition"><i class="fa-solid fa-paperclip"></i></button>
+        <input type="file" id="fileInput" class="hidden" accept=".pdf,.docx,.doc,.txt,.md,.rtf,.png,.jpg,.jpeg,.webp,.heic,.mp3,.wav,.aac,.flac,.m4a,.mp4,.mov,.avi,.webm,.csv,.xlsx,.xls,.json,.py,.js,.html,.css,.java,.cpp,.c,.go,.rs,.php,.rb,.ts,.jsx,.tsx" />
+        <textarea id="msgInput" rows="1" placeholder="اكتب رسالتك..."
+          class="flex-1 bg-transparent text-slate-100 placeholder-slate-500 text-sm outline-none resize-none max-h-36 py-2 px-1 no-scrollbar"></textarea>
+        <button id="sendBtn" class="shrink-0 w-10 h-10 rounded-xl ai-gradient glow-sm text-white flex items-center justify-center hover:scale-105 transition disabled:opacity-40"><i class="fa-solid fa-paper-plane"></i></button>
+      </div>
+      <p class="text-center text-[10px] text-slate-600 mt-2">مدعوم من Gemini AI · Smart AI</p>
+    </div>
+  </div>
+</div>
+
+<!-- Modals -->
+<div id="renameModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-5">
+  <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm fade-in">
+    <h3 id="renameTitle" class="text-lg font-bold mb-4 text-white">إعادة تسمية</h3>
+    <input type="text" id="renameInput" class="w-full bg-slate-800 border border-slate-700 rounded-xl py-3 px-4 text-sm text-white outline-none mb-4" />
+    <div class="flex gap-3">
+      <button id="renameCancel" class="flex-1 bg-slate-800 text-slate-300 font-semibold py-2.5 rounded-xl text-sm">إلغاء</button>
+      <button id="renameSave" class="flex-1 ai-gradient text-white font-bold py-2.5 rounded-xl text-sm">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<div id="imageModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-5">
+  <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md fade-in">
+    <h3 class="text-lg font-bold mb-2 text-white flex items-center gap-2">
+      <i class="fa-solid fa-wand-magic-sparkles text-purple-400"></i> توليد صورة
+    </h3>
+    <p class="text-xs text-slate-400 mb-4">صف الصورة بالتفصيل</p>
+    <textarea id="imagePromptInput" rows="4" class="w-full bg-slate-800 border border-slate-700 rounded-xl py-3 px-4 text-sm text-white outline-none mb-4 resize-none" placeholder="مثال: قطة لطيفة..."></textarea>
+    <div class="flex gap-3">
+      <button id="imageCancel" class="flex-1 bg-slate-800 text-slate-300 font-semibold py-2.5 rounded-xl text-sm">إلغاء</button>
+      <button id="imageGenerate" class="flex-1 ai-gradient text-white font-bold py-2.5 rounded-xl text-sm">توليد</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+let supabaseClient = null;
+if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
+  supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      flowType: 'implicit',
+      detectSessionInUrl: true,
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  });
+}
+
+let currentUser = null;
+let conversations = [];
+let currentConversationId = null;
+let currentLang = 'ar';
+let isSending = false;
+let authMode = 'login';
+let currentMessages = [];
+let renamingConv = null;
+let pendingAttachment = null;
+
+const T = {
+  ar: { authSubtitle: 'مساعدك الذكي متعدد المحادثات', tabLogin: 'تسجيل الدخول', tabSignup: 'حساب جديد', emailLabel: 'البريد الإلكتروني', passwordLabel: 'كلمة المرور', submitLogin: 'تسجيل الدخول', submitSignup: 'إنشاء حساب', googleBtn: 'المتابعة باستخدام Google', divider: 'أو', newChat: 'محادثة جديدة', chatTitle: 'Smart AI', msgPlaceholder: 'اكتب رسالتك...', emptyTitle: 'كيف أساعدك اليوم؟', emptyText: 'ابدأ محادثة، ارفع ملفاً، أو ولّد صورة.', renameTitle: 'إعادة تسمية', renameCancel: 'إلغاء', renameSave: 'حفظ', renameMenu: 'إعادة تسمية', deleteMenu: 'حذف', deleteText: 'هل أنت متأكد؟', noConvs: 'لا محادثات بعد', errorEmail: 'بيانات خاطئة.', errorGeneric: 'خطأ. حاول لاحقاً.', errorPassword: '8 أحرف على الأقل.', errorExists: 'مستخدم بالفعل.', loading: '...' },
+  en: { authSubtitle: 'Your AI assistant', tabLogin: 'Login', tabSignup: 'Sign Up', emailLabel: 'Email', passwordLabel: 'Password', submitLogin: 'Login', submitSignup: 'Create Account', googleBtn: 'Continue with Google', divider: 'or', newChat: 'New Chat', chatTitle: 'Smart AI', msgPlaceholder: 'Type a message...', emptyTitle: 'How can I help you?', emptyText: 'Start a chat, upload a file, or generate an image.', renameTitle: 'Rename', renameCancel: 'Cancel', renameSave: 'Save', renameMenu: 'Rename', deleteMenu: 'Delete', deleteText: 'Are you sure?', noConvs: 'No conversations', errorEmail: 'Invalid credentials.', errorGeneric: 'Error. Try again.', errorPassword: 'Min 8 characters.', errorExists: 'Already in use.', loading: '...' }
+};
+
+function t(k) { return (T[currentLang] && T[currentLang][k]) || k; }
+
+function applyLang(lang) {
+  currentLang = lang;
+  document.getElementById('authSubtitle').textContent = t('authSubtitle');
+  document.getElementById('tabLoginText').textContent = t('tabLogin');
+  document.getElementById('tabSignupText').textContent = t('tabSignup');
+  document.getElementById('emailLabel').textContent = t('emailLabel');
+  document.getElementById('passwordLabel').textContent = t('passwordLabel');
+  document.getElementById('authSubmitText').textContent = authMode === 'login' ? t('submitLogin') : t('submitSignup');
+  document.getElementById('googleBtnText').textContent = t('googleBtn');
+  document.getElementById('dividerText').textContent = t('divider');
+  document.getElementById('newChatText').textContent = t('newChat');
+  document.getElementById('msgInput').placeholder = t('msgPlaceholder');
+  document.getElementById('renameTitle').textContent = t('renameTitle');
+  document.getElementById('renameCancel').textContent = t('renameCancel');
+  document.getElementById('renameSave').textContent = t('renameSave');
+  if (currentConversationId) {
+    const c = conversations.find(x => x.id === currentConversationId);
+    if (c) document.getElementById('chatTitle').textContent = c.title;
+  } else document.getElementById('chatTitle').textContent = t('chatTitle');
+  renderConversations();
+  renderMessages();
+}
+
+document.getElementById('langToggle').addEventListener('click', () => applyLang(currentLang === 'ar' ? 'en' : 'ar'));
+
+document.querySelectorAll('.auth-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.auth-tab').forEach(el => {
+      el.classList.remove('bg-slate-900', 'text-white', 'shadow-md');
+      el.classList.add('text-slate-400');
+    });
+    tab.classList.remove('text-slate-400');
+    tab.classList.add('bg-slate-900', 'text-white', 'shadow-md');
+    authMode = tab.dataset.tab;
+    document.getElementById('authSubmitText').textContent = authMode === 'login' ? t('submitLogin') : t('submitSignup');
+    hideAuthError();
+  });
+});
+
+function showAuthError(m) { const e = document.getElementById('authError'); e.textContent = m; e.classList.remove('hidden'); }
+function hideAuthError() { document.getElementById('authError').classList.add('hidden'); }
+
+document.getElementById('authForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('authSubmit');
+  hideAuthError();
+  if (authMode === 'signup' && password.length < 8) { showAuthError(t('errorPassword')); return; }
+  btn.disabled = true;
+  const orig = document.getElementById('authSubmitText').textContent;
+  document.getElementById('authSubmitText').textContent = t('loading');
+  try {
+    const url = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || t('errorGeneric'));
+    currentUser = data.user;
+    await enterApp();
+  } catch (err) {
+    let m = err.message;
+    if (m.toLowerCase().includes('invalid')) m = t('errorEmail');
+    else if (m.toLowerCase().includes('already')) m = t('errorExists');
+    showAuthError(m);
+  } finally {
+    btn.disabled = false;
+    document.getElementById('authSubmitText').textContent = orig;
+  }
+});
+
+document.getElementById('googleBtn').addEventListener('click', async () => {
+  if (!supabaseClient) { showAuthError('Supabase not configured.'); return; }
+  try {
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin + '/auth/callback',
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
+    });
+    if (error) throw error;
+  } catch (err) { showAuthError(err.message || t('errorGeneric')); }
+});
+
+async function enterApp() {
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('appScreen').classList.remove('hidden');
+  document.getElementById('appScreen').classList.add('flex');
+  document.getElementById('userEmail').textContent = currentUser.email;
+  document.getElementById('userAvatar').textContent = (currentUser.email[0] || 'U').toUpperCase();
+  await loadConversations();
+  renderMessages();
+}
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  if (supabaseClient) await supabaseClient.auth.signOut();
+  currentUser = null; conversations = []; currentConversationId = null; currentMessages = []; pendingAttachment = null;
+  document.getElementById('appScreen').classList.add('hidden');
+  document.getElementById('appScreen').classList.remove('flex');
+  document.getElementById('authScreen').classList.remove('hidden');
+  document.getElementById('email').value = '';
+  document.getElementById('password').value = '';
+  renderPendingAttachment();
+});
+
+async function loadConversations() {
+  try {
+    const res = await fetch('/api/conversations');
+    const data = await res.json();
+    conversations = data.conversations || [];
+    renderConversations();
+  } catch (e) { console.error(e); }
+}
+
+function renderConversations() {
+  const list = document.getElementById('convList');
+  list.innerHTML = '';
+  if (conversations.length === 0) {
+    list.innerHTML = `<div class="text-center py-6 text-slate-500 text-xs">${t('noConvs')}</div>`;
+    return;
+  }
+  conversations.forEach(c => {
+    const item = document.createElement('div');
+    const isActive = c.id === currentConversationId;
+    item.className = `group flex items-center gap-2 px-3 py-2.5 rounded-lg mb-1 cursor-pointer transition ${isActive ? 'bg-purple-900/30 border border-purple-700/40' : 'hover:bg-slate-800/60 border border-transparent'}`;
+    item.innerHTML = `
+      <i class="fa-solid fa-comment-dots text-xs ${isActive ? 'text-purple-400' : 'text-slate-500'}"></i>
+      <span class="flex-1 text-sm ${isActive ? 'text-white font-semibold' : 'text-slate-300'} truncate">${escapeHtml(c.title)}</span>
+      <button class="menu-btn opacity-0 group-hover:opacity-100 text-slate-400 px-1" data-id="${c.id}"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
+    `;
+    item.addEventListener('click', (e) => { if (!e.target.closest('.menu-btn')) selectConversation(c.id); });
+    item.querySelector('.menu-btn').addEventListener('click', (e) => { e.stopPropagation(); showConvMenu(c, e.target); });
+    list.appendChild(item);
+  });
+}
+
+function showConvMenu(conv, anchor) {
+  const existing = document.querySelector('.conv-context-menu');
+  if (existing) existing.remove();
+  const menu = document.createElement('div');
+  menu.className = 'conv-context-menu';
+  menu.style.cssText = `position:fixed;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:6px;box-shadow:0 10px 40px rgba(0,0,0,0.5);z-index:2000;min-width:150px;`;
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = Math.max(10, rect.right - 150) + 'px';
+  menu.innerHTML = `
+    <div class="menu-item" data-action="rename" style="padding:8px 12px;border-radius:6px;cursor:pointer;font-size:0.85rem;color:#e2e8f0;"><i class="fa-solid fa-pen text-xs mr-1"></i> ${t('renameMenu')}</div>
+    <div class="menu-item" data-action="delete" style="padding:8px 12px;border-radius:6px;cursor:pointer;font-size:0.85rem;color:#f87171;"><i class="fa-solid fa-trash text-xs mr-1"></i> ${t('deleteMenu')}</div>
+  `;
+  menu.querySelectorAll('.menu-item').forEach(it => {
+    it.addEventListener('mouseenter', () => it.style.background = '#334155');
+    it.addEventListener('mouseleave', () => it.style.background = 'transparent');
+    it.addEventListener('click', () => {
+      const action = it.dataset.action;
+      menu.remove();
+      if (action === 'rename') openRenameModal(conv);
+      else if (action === 'delete') deleteConversation(conv);
+    });
+  });
+  document.body.appendChild(menu);
+  setTimeout(() => {
+    document.addEventListener('click', function close(ev) {
+      if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', close); }
+    });
+  }, 0);
+}
+
+async function selectConversation(id) {
+  currentConversationId = id;
+  const conv = conversations.find(c => c.id === id);
+  if (conv) document.getElementById('chatTitle').textContent = conv.title;
+  renderConversations();
+  closeSidebar();
+  const el = document.getElementById('chatMessages');
+  el.innerHTML = '<div class="text-center py-8 text-slate-500"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+  try {
+    const res = await fetch(`/api/conversations/${id}/messages`);
     const data = await res.json();
     currentMessages = data.messages || [];
     renderMessages();
-  } catch (err) {
-    console.error(err);
-  }
+  } catch (e) { console.error(e); }
 }
 
 document.getElementById('newChatBtn').addEventListener('click', async () => {
   try {
     const res = await fetch('/api/conversations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'New Chat' }),
     });
     const data = await res.json();
@@ -24,154 +413,170 @@ document.getElementById('newChatBtn').addEventListener('click', async () => {
       closeSidebar();
       setTimeout(() => document.getElementById('msgInput').focus(), 100);
     }
-  } catch (err) {
-    console.error(err);
+  } catch (e) { console.error(e); }
+});
+
+const fileInput = document.getElementById('fileInput');
+const fileBtn = document.getElementById('fileBtn');
+fileBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 100 * 1024 * 1024) { alert('File too large. Max 100MB.'); return; }
+  fileBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+  fileBtn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    pendingAttachment = data.file;
+    renderPendingAttachment();
+    document.getElementById('msgInput').focus();
+  } catch (err) { alert('Upload failed: ' + err.message); }
+  finally {
+    fileBtn.innerHTML = '<i class="fa-solid fa-paperclip"></i>';
+    fileBtn.disabled = false;
+    fileInput.value = '';
   }
 });
 
-// ==================== MESSAGES ====================
+function renderPendingAttachment() {
+  const wrap = document.getElementById('pendingAttachWrap');
+  if (!pendingAttachment) { wrap.classList.add('hidden'); wrap.innerHTML = ''; return; }
+  const emoji = { image: '🖼️', video: '🎥', audio: '🎵', pdf: '📄', document: '📝', text: '📃', spreadsheet: '📊' }[pendingAttachment.category] || '📎';
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = `<div class="attachment-pill"><span>${emoji}</span><span class="truncate max-w-[200px]">${escapeHtml(pendingAttachment.displayName)}</span><button onclick="clearPendingAttachment()"><i class="fa-solid fa-xmark"></i></button></div>`;
+}
+
+window.clearPendingAttachment = function() { pendingAttachment = null; renderPendingAttachment(); };
+
+const imgGenBtn = document.getElementById('imgGenBtn');
+const imageModal = document.getElementById('imageModal');
+const imagePromptInput = document.getElementById('imagePromptInput');
+imgGenBtn.addEventListener('click', () => { imageModal.classList.remove('hidden'); imageModal.classList.add('flex'); setTimeout(() => imagePromptInput.focus(), 100); });
+document.getElementById('imageCancel').addEventListener('click', () => { imageModal.classList.add('hidden'); imageModal.classList.remove('flex'); imagePromptInput.value = ''; });
+
+document.getElementById('imageGenerate').addEventListener('click', async () => {
+  const prompt = imagePromptInput.value.trim();
+  if (!prompt) return;
+  imageModal.classList.add('hidden'); imageModal.classList.remove('flex');
+  imagePromptInput.value = '';
+  if (!currentConversationId) { await document.getElementById('newChatBtn').click(); if (!currentConversationId) return; }
+  currentMessages.push({ role: 'user', content: `🎨 توليد صورة: ${prompt}` });
+  renderMessages();
+  const el = document.getElementById('chatMessages');
+  const typing = document.createElement('div');
+  typing.className = 'flex gap-3 fade-in'; typing.id = 'typingIndicator';
+  typing.innerHTML = `<div class="w-9 h-9 rounded-xl ai-gradient flex items-center justify-center text-white shrink-0"><i class="fa-solid fa-image text-sm"></i></div><div class="flex-1 bg-slate-900/80 border border-slate-800 rounded-2xl px-4 py-3"><div class="typing"><span></span><span></span><span></span></div><p class="text-xs text-slate-400 mt-2">جاري توليد الصورة...</p></div>`;
+  el.appendChild(typing);
+  el.scrollTop = el.scrollHeight;
+  try {
+    const res = await fetch('/api/generate-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    document.getElementById('typingIndicator')?.remove();
+    const imageDataUrl = `data:${data.image.mimeType};base64,${data.image.data}`;
+    currentMessages.push({ role: 'assistant', content: data.text || '✨ هذه الصورة:', image_url: imageDataUrl });
+    renderMessages();
+  } catch (err) {
+    document.getElementById('typingIndicator')?.remove();
+    currentMessages.push({ role: 'assistant', content: '⚠️ ' + err.message });
+    renderMessages();
+  }
+});
+
 function renderMessages() {
   const el = document.getElementById('chatMessages');
   el.innerHTML = '';
-
   if (!currentConversationId || currentMessages.length === 0) {
-    el.innerHTML = `
-      <div class="flex flex-col items-center justify-center h-full text-center px-6 py-12">
-        <div class="w-20 h-20 rounded-2xl ai-gradient glow flex items-center justify-center mb-5">
-          <i class="fa-solid fa-robot text-white text-3xl"></i>
-        </div>
-        <h2 class="text-2xl font-black text-white mb-2">${t('emptyTitle')}</h2>
-        <p class="text-slate-400 text-sm max-w-sm">${t('emptyText')}</p>
-      </div>
-    `;
+    el.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-center px-6 py-12"><div class="w-20 h-20 rounded-2xl ai-gradient glow flex items-center justify-center mb-5"><i class="fa-solid fa-robot text-white text-3xl"></i></div><h2 class="text-2xl font-black text-white mb-2">${t('emptyTitle')}</h2><p class="text-slate-400 text-sm max-w-sm">${t('emptyText')}</p></div>`;
     return;
   }
-
   currentMessages.forEach(m => {
     const div = document.createElement('div');
     div.className = 'flex gap-3 fade-in';
-
     if (m.role === 'user') {
-      div.innerHTML = `
-        <div class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 shrink-0">
-          <i class="fa-solid fa-user text-sm"></i>
-        </div>
-        <div class="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3">
-          <div class="msg-body text-slate-200 text-sm leading-relaxed break-words">${escapeHtml(m.content)}</div>
-        </div>
-      `;
+      let attachHtml = '';
+      if (m.attachment) {
+        const emoji = { image: '🖼️', video: '🎥', audio: '🎵', pdf: '📄', document: '📝', text: '📃', spreadsheet: '📊' }[m.attachment.category] || '📎';
+        attachHtml = `<div class="attachment-pill mt-1">${emoji} ${escapeHtml(m.attachment.displayName || '')}</div>`;
+      }
+      div.innerHTML = `<div class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 shrink-0"><i class="fa-solid fa-user text-sm"></i></div><div class="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3">${attachHtml}${m.content ? `<div class="msg-body text-slate-200 text-sm leading-relaxed break-words">${escapeHtml(m.content)}</div>` : ''}</div>`;
     } else {
-      div.innerHTML = `
-        <div class="w-9 h-9 rounded-xl ai-gradient flex items-center justify-center text-white shrink-0 glow-sm">
-          <i class="fa-solid fa-robot text-sm"></i>
-        </div>
-        <div class="flex-1 min-w-0 bg-slate-900/80 border border-slate-800 rounded-2xl px-4 py-3">
-          <div class="msg-body text-slate-200 text-sm leading-relaxed break-words">${marked.parse(m.content)}</div>
-        </div>
-      `;
+      let imageHtml = '';
+      const imgSrc = m.image_url || m.image;
+      if (imgSrc) {
+        imageHtml = `<div class="mt-3 rounded-xl overflow-hidden border border-slate-700"><img src="${imgSrc}" class="w-full h-auto" /><a href="${imgSrc}" download="smart-ai.png" class="block text-center text-xs text-purple-400 py-2 bg-slate-800/50"><i class="fa-solid fa-download"></i> تحميل</a></div>`;
+      }
+      div.innerHTML = `<div class="w-9 h-9 rounded-xl ai-gradient flex items-center justify-center text-white shrink-0"><i class="fa-solid fa-robot text-sm"></i></div><div class="flex-1 min-w-0 bg-slate-900/80 border border-slate-800 rounded-2xl px-4 py-3"><div class="msg-body text-slate-200 text-sm leading-relaxed break-words">${marked.parse(m.content || '')}</div>${imageHtml}</div>`;
     }
     el.appendChild(div);
   });
-
   el.scrollTop = el.scrollHeight;
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+function escapeHtml(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
 
-// ==================== SEND MESSAGE ====================
 const msgInput = document.getElementById('msgInput');
 const sendBtn = document.getElementById('sendBtn');
-
 msgInput.addEventListener('input', () => {
   msgInput.style.height = 'auto';
   msgInput.style.height = Math.min(msgInput.scrollHeight, 144) + 'px';
 });
-
 msgInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
-
 sendBtn.addEventListener('click', sendMessage);
 
 async function sendMessage() {
   const content = msgInput.value.trim();
-  if (!content || isSending) return;
-
+  if ((!content && !pendingAttachment) || isSending) return;
   if (!currentConversationId) {
     await document.getElementById('newChatBtn').click();
     if (!currentConversationId) return;
   }
-
   isSending = true;
   sendBtn.disabled = true;
+  const attachment = pendingAttachment;
+  pendingAttachment = null;
+  renderPendingAttachment();
   msgInput.value = '';
   msgInput.style.height = 'auto';
-
-  currentMessages.push({ role: 'user', content });
+  currentMessages.push({ role: 'user', content, attachment });
   renderMessages();
-
   const el = document.getElementById('chatMessages');
   const typing = document.createElement('div');
-  typing.className = 'flex gap-3 fade-in';
-  typing.id = 'typingIndicator';
-  typing.innerHTML = `
-    <div class="w-9 h-9 rounded-xl ai-gradient flex items-center justify-center text-white shrink-0 glow-sm">
-      <i class="fa-solid fa-robot text-sm"></i>
-    </div>
-    <div class="flex-1 bg-slate-900/80 border border-slate-800 rounded-2xl px-4 py-3">
-      <div class="typing"><span></span><span></span><span></span></div>
-    </div>
-  `;
+  typing.className = 'flex gap-3 fade-in'; typing.id = 'typingIndicator';
+  typing.innerHTML = `<div class="w-9 h-9 rounded-xl ai-gradient flex items-center justify-center text-white shrink-0"><i class="fa-solid fa-robot text-sm"></i></div><div class="flex-1 bg-slate-900/80 border border-slate-800 rounded-2xl px-4 py-3"><div class="typing"><span></span><span></span><span></span></div></div>`;
   el.appendChild(typing);
   el.scrollTop = el.scrollHeight;
-
   try {
     const res = await fetch(`/api/conversations/${currentConversationId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, attachment }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error');
-
     document.getElementById('typingIndicator')?.remove();
     currentMessages.push({ role: 'assistant', content: data.aiMessage.content });
     renderMessages();
-
     if (data.conversationTitle) {
       const c = conversations.find(x => x.id === currentConversationId);
-      if (c) {
-        c.title = data.conversationTitle;
-        document.getElementById('chatTitle').textContent = c.title;
-        renderConversations();
-      }
+      if (c) { c.title = data.conversationTitle; document.getElementById('chatTitle').textContent = c.title; renderConversations(); }
     }
-
     const idx = conversations.findIndex(c => c.id === currentConversationId);
-    if (idx > 0) {
-      const [c] = conversations.splice(idx, 1);
-      conversations.unshift(c);
-      renderConversations();
-    }
+    if (idx > 0) { const [c] = conversations.splice(idx, 1); conversations.unshift(c); renderConversations(); }
   } catch (err) {
     document.getElementById('typingIndicator')?.remove();
     currentMessages.push({ role: 'assistant', content: '⚠️ ' + t('errorGeneric') });
     renderMessages();
   } finally {
-    isSending = false;
-    sendBtn.disabled = false;
-    msgInput.focus();
+    isSending = false; sendBtn.disabled = false; msgInput.focus();
   }
 }
 
-// ==================== RENAME MODAL ====================
 function openRenameModal(conv) {
   renamingConv = conv;
   document.getElementById('renameInput').value = conv.title;
@@ -179,107 +584,82 @@ function openRenameModal(conv) {
   document.getElementById('renameModal').classList.add('flex');
   setTimeout(() => document.getElementById('renameInput').focus(), 100);
 }
-
 document.getElementById('renameCancel').addEventListener('click', () => {
   document.getElementById('renameModal').classList.add('hidden');
   document.getElementById('renameModal').classList.remove('flex');
 });
-
 document.getElementById('renameSave').addEventListener('click', async () => {
   const newTitle = document.getElementById('renameInput').value.trim();
   if (!newTitle || !renamingConv) return;
-
   try {
     const res = await fetch(`/api/conversations/${renamingConv.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: newTitle }),
     });
     const data = await res.json();
     if (data.conversation) {
       renamingConv.title = data.conversation.title;
-      if (renamingConv.id === currentConversationId) {
-        document.getElementById('chatTitle').textContent = data.conversation.title;
-      }
+      if (renamingConv.id === currentConversationId) document.getElementById('chatTitle').textContent = data.conversation.title;
       renderConversations();
     }
-  } catch (err) {
-    console.error(err);
-  }
+  } catch (e) { console.error(e); }
   document.getElementById('renameModal').classList.add('hidden');
   document.getElementById('renameModal').classList.remove('flex');
 });
 
-// ==================== DELETE ====================
 function deleteConversation(conv) {
   if (!confirm(t('deleteText'))) return;
-
   fetch(`/api/conversations/${conv.id}`, { method: 'DELETE' })
     .then(res => res.json())
     .then(() => {
       conversations = conversations.filter(c => c.id !== conv.id);
       if (currentConversationId === conv.id) {
-        currentConversationId = null;
-        currentMessages = [];
+        currentConversationId = null; currentMessages = [];
         document.getElementById('chatTitle').textContent = t('chatTitle');
         renderMessages();
       }
       renderConversations();
-    })
-    .catch(err => console.error(err));
+    }).catch(e => console.error(e));
 }
 
-// ==================== SIDEBAR ====================
 const sidebar = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
-
-function openSidebar() {
-  sidebar.classList.add('open');
-  sidebarOverlay.classList.add('show');
-}
-
-function closeSidebar() {
-  if (window.innerWidth < 768) {
-    sidebar.classList.remove('open');
-  }
-  sidebarOverlay.classList.remove('show');
-}
-
+function openSidebar() { sidebar.classList.add('open'); sidebarOverlay.classList.add('show'); }
+function closeSidebar() { if (window.innerWidth < 768) sidebar.classList.remove('open'); sidebarOverlay.classList.remove('show'); }
 document.getElementById('menuToggle').addEventListener('click', openSidebar);
 document.getElementById('closeSidebarBtn')?.addEventListener('click', closeSidebar);
 sidebarOverlay.addEventListener('click', closeSidebar);
 
-// ==================== INIT ====================
 (async function init() {
   applyLang('ar');
 
-  // Handle Supabase OAuth callback
-  if (supabaseClient && window.location.hash.includes('access_token')) {
-    try {
-      const { data, error } = await supabaseClient.auth.getSession();
-      if (!error && data.session) {
-        const res = await fetch('/api/auth/google', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            access_token: data.session.access_token,
-            refresh_token: data.session.refresh_token,
-          }),
-        });
-        const result = await res.json();
-        if (res.ok && result.user) {
-          currentUser = result.user;
-          window.history.replaceState(null, '', window.location.pathname);
-          await enterApp();
-          return;
+  // Handle OAuth callback - implicit flow
+  if (supabaseClient) {
+    // Check hash for access_token
+    if (window.location.hash && window.location.hash.includes('access_token')) {
+      try {
+        const { data, error } = await supabaseClient.auth.getSession();
+        if (!error && data.session) {
+          const res = await fetch('/api/auth/google', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              access_token: data.session.access_token,
+              refresh_token: data.session.refresh_token,
+            }),
+          });
+          const result = await res.json();
+          if (res.ok && result.user) {
+            currentUser = result.user;
+            window.history.replaceState(null, '', window.location.pathname);
+            await enterApp();
+            return;
+          }
         }
-      }
-    } catch (err) {
-      console.error('Google callback error:', err);
+      } catch (err) { console.error('OAuth callback error:', err); }
     }
   }
 
-  // Check session
+  // Check existing session
   try {
     const res = await fetch('/api/auth/me');
     if (res.ok) {
@@ -287,7 +667,7 @@ sidebarOverlay.addEventListener('click', closeSidebar);
       currentUser = data.user;
       await enterApp();
     }
-  } catch (err) {}
+  } catch (e) {}
 })();
 </script>
 </body>
