@@ -342,8 +342,15 @@ const SUPABASE_ANON_KEY = sb_publishable_mkRfQmalI1OuAIhm6RD3ng_e43iaZc0
 
 let supabaseClient = null;
 if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
-  supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-}
+  supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      flowType: 'implicit',
+      detectSessionInUrl: true,
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  });
+  }
 
 // ==================== STATE ====================
 let currentUser = null;
