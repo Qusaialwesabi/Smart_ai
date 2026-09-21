@@ -1,7 +1,7 @@
 {
   "name": "smart-ai",
   "version": "3.0.0",
-  "description": "Smart AI - Multi-user AI Assistant with file support",
+  "description": "Smart AI - Multi-user AI Assistant",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
