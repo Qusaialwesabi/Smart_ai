@@ -13,82 +13,65 @@
 
   <style>
     :root {
-      --bg-color: #0f172a;
-      --card-bg: #1e293b;
-      --accent-color: #6366f1;
-      --accent-hover: #4f46e5;
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --border-color: #334155;
-      --user-msg-bg: #4f46e5;
-      --ai-msg-bg: #1e293b;
+      --bg-color: #0f172a; --card-bg: #1e293b; --accent-color: #6366f1;
+      --text-main: #f8fafc; --text-muted: #94a3b8; --border-color: #334155;
+      --user-msg-bg: #4f46e5; --ai-msg-bg: #1e293b;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
     body { background-color: var(--bg-color); color: var(--text-main); height: 100vh; height: 100dvh; overflow: hidden; }
 
-    /* Auth Screen */
-    #auth-screen {
-      position: fixed; inset: 0; background: var(--bg-color); z-index: 1000;
-      display: flex; align-items: center; justify-content: center; padding: 20px;
-    }
-    .auth-card {
-      background: var(--card-bg); border: 1px solid var(--border-color);
-      padding: 30px; border-radius: 16px; width: 100%; max-width: 400px; text-align: center;
-    }
-    .auth-card h2 { margin-bottom: 20px; color: var(--text-main); }
-    .auth-card input {
-      width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 8px;
-      border: 1px solid var(--border-color); background: var(--bg-color); color: #fff; outline: none;
-    }
-    .auth-card button {
-      width: 100%; padding: 12px; border-radius: 8px; border: none;
-      background: var(--accent-color); color: #fff; font-weight: bold; cursor: pointer; margin-top: 8px;
-    }
+    /* Auth Styles */
+    #auth-screen { position: fixed; inset: 0; background: var(--bg-color); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .auth-card { background: var(--card-bg); border: 1px solid var(--border-color); padding: 30px; border-radius: 16px; width: 100%; max-width: 400px; text-align: center; }
+    .auth-card h2 { margin-bottom: 20px; }
+    .auth-card input { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: #fff; outline: none; }
+    .auth-card button { width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--accent-color); color: #fff; font-weight: bold; cursor: pointer; margin-top: 8px; }
     .auth-toggle { margin-top: 15px; font-size: 0.88rem; color: var(--text-muted); cursor: pointer; }
     .auth-toggle span { color: var(--accent-color); text-decoration: underline; }
 
-    /* Main App */
     #app-container { display: flex; width: 100%; height: 100%; position: relative; }
     
-    #sidebar {
-      width: 280px; background-color: #0b1120; border-left: 1px solid var(--border-color);
-      display: flex; flex-direction: column; transition: transform 0.3s ease; z-index: 100;
-    }
+    #sidebar { width: 280px; background-color: #0b1120; border-left: 1px solid var(--border-color); display: flex; flex-direction: column; transition: transform 0.3s ease; z-index: 100; flex-shrink: 0; }
     
-    #chat-main { flex: 1; display: flex; flex-direction: column; height: 100%; background-color: var(--bg-color); }
+    /* منع خروج محتوى الشات عن الإطار */
+    #chat-main { flex: 1; display: flex; flex-direction: column; height: 100%; background-color: var(--bg-color); min-width: 0; }
     
-    header {
-      padding: 12px 16px; border-bottom: 1px solid var(--border-color);
-      display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.9);
-    }
+    header { padding: 12px 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.9); }
     .mobile-toggle { display: none; background: none; border: none; color: var(--text-main); font-size: 1.2rem; cursor: pointer; }
     
-    #messages-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    #messages-container { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
     
-    .message { max-width: 85%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; word-break: break-word; }
+    .message { max-width: 90%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; overflow-wrap: break-word; word-break: break-word; }
     .message.user { align-self: flex-start; background-color: var(--user-msg-bg); color: #fff; }
-    .message.assistant { align-self: flex-end; background-color: var(--ai-msg-bg); border: 1px solid var(--border-color); }
+    .message.assistant { align-self: flex-end; background-color: var(--ai-msg-bg); border: 1px solid var(--border-color); width: 100%; }
 
-    .message pre { background: #090d16 !important; padding: 12px; border-radius: 8px; margin: 10px 0; overflow-x: auto; direction: ltr; text-align: left; }
-    .message code { font-family: monospace; }
-    .message img { max-width: 100%; border-radius: 8px; margin-top: 8px; }
+    /* حماية مقاسات الشاشة في الأكواد الطويلة */
+    .message pre { background: #090d16 !important; padding: 12px; border-radius: 8px; margin: 10px 0; overflow-x: auto; max-width: 100%; direction: ltr; text-align: left; }
+    .message code { font-family: monospace; white-space: pre-wrap; }
+    .message pre code { white-space: pre; } /* الأسطر الطويلة تعمل Scroll فقط داخل المربع الأسود */
 
     #input-area { padding: 12px 16px; background-color: var(--card-bg); border-top: 1px solid var(--border-color); display: flex; gap: 8px; align-items: center; }
     #message-input { flex: 1; background-color: var(--bg-color); border: 1px solid var(--border-color); color: #fff; padding: 12px 16px; border-radius: 24px; outline: none; }
-    
-    .btn-icon { background-color: var(--accent-color); color: #fff; border: none; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-    .btn-icon.img-btn { background-color: #10b981; }
+    .btn-icon { background-color: var(--accent-color); color: #fff; border: none; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
 
-    .conv-item { padding: 10px; border-radius: 8px; margin-bottom: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); }
+    /* تصميم عناصر القائمة الجانبية */
+    .conv-item { padding: 10px; border-radius: 8px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); cursor: pointer; gap: 8px; }
     .conv-item.active { background: var(--card-bg); color: #fff; }
     .conv-item:hover { background: rgba(255,255,255,0.05); }
+    .conv-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+    
+    .conv-actions { display: flex; gap: 10px; opacity: 0.6; }
+    .conv-item:hover .conv-actions { opacity: 1; }
+    .conv-actions i { cursor: pointer; transition: 0.2s; }
+    .conv-actions .edit-btn:hover { color: #3b82f6; }
+    .conv-actions .del-btn:hover { color: #ef4444; }
 
     @media (max-width: 768px) {
       .mobile-toggle { display: block; }
-      #sidebar { position: absolute; top: 0; bottom: 0; right: 0; transform: translateX(100%); }
+      #sidebar { position: absolute; top: 0; bottom: 0; right: 0; transform: translateX(100%); width: 260px; }
       #sidebar.open { transform: translateX(0); }
-      .message { max-width: 92%; }
+      .message { max-width: 95%; }
     }
   </style>
 </head>
@@ -128,8 +111,7 @@
       <div id="messages-container"></div>
 
       <div id="input-area">
-        <input type="text" id="message-input" placeholder="اكتب رسالتك أو وصف الصورة..." />
-        <button class="btn-icon img-btn" id="gen-img-btn" title="توليد صورة"><i class="fas fa-image"></i></button>
+        <input type="text" id="message-input" placeholder="اكتب رسالتك هنا..." />
         <button class="btn-icon" id="send-btn" title="إرسال"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>
