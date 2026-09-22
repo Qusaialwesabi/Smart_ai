@@ -53,7 +53,7 @@ async function callGemini(contents, retries = 2) {
       const payload = {
         contents,
         systemInstruction: {
-          parts: [{ text: "أنت مساعد برمجي وذكي. أجب بدقة واستخدم markdown code blocks للأكواد." }]
+          parts: [{ text: "أنت مساعد ذكي ومحترف. أجب بدقة واستخدم markdown code blocks للأكواد." }]
         }
       };
 
@@ -73,7 +73,7 @@ async function callGemini(contents, retries = 2) {
       continue;
     }
   }
-  throw new Error('فشلت جميع المحاولات.');
+  throw new Error('فشلت جميع المحاولات للاتصال بجوجل.');
 }
 
 function extractText(data) {
@@ -106,7 +106,7 @@ async function getAuthenticatedUser(req) {
 
 async function requireAuth(req, res, next) {
   const user = await getAuthenticatedUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!user) return res.status(401).json({ error: 'غير مصرح لك' });
   req.user = user;
   next();
 }
@@ -122,17 +122,17 @@ app.post('/api/auth/signup', async (req, res) => {
     const { data: signInData } = await supabaseAdmin.auth.signInWithPassword({ email, password });
     res.cookie('sb_access_token', signInData.session.access_token, COOKIE_OPTS);
     res.json({ user: { id: data.user.id, email: data.user.email } });
-  } catch { res.status(500).json({ error: 'Error' }); }
+  } catch { res.status(500).json({ error: 'حدث خطأ في الخادم' }); }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const { data, error } = await supabaseAdmin.auth.signInWithPassword({ email, password });
-    if (error) return res.status(400).json({ error: 'Invalid credentials' });
+    if (error) return res.status(400).json({ error: 'بيانات الدخول غير صحيحة' });
     res.cookie('sb_access_token', data.session.access_token, COOKIE_OPTS);
     res.json({ user: { id: data.user.id, email: data.user.email } });
-  } catch { res.status(500).json({ error: 'Error' }); }
+  } catch { res.status(500).json({ error: 'حدث خطأ في الخادم' }); }
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -155,7 +155,6 @@ app.post('/api/conversations', requireAuth, async (req, res) => {
   res.json({ conversation: data });
 });
 
-// تعديل اسم المحادثة
 app.put('/api/conversations/:id', requireAuth, async (req, res) => {
   const { title } = req.body;
   const { data, error } = await supabaseAdmin.from('conversations').update({ title }).eq('id', req.params.id).eq('user_id', req.user.id).select().single();
@@ -163,7 +162,6 @@ app.put('/api/conversations/:id', requireAuth, async (req, res) => {
   res.json({ success: true, conversation: data });
 });
 
-// حذف المحادثة
 app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
   const { error } = await supabaseAdmin.from('conversations').delete().eq('id', req.params.id).eq('user_id', req.user.id);
   if (error) return res.status(400).json({ error: 'تعذر الحذف' });
@@ -181,25 +179,37 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     const { id } = req.params;
     const { content } = req.body;
     
+    // حفظ رسالة المستخدم
     const { data: userMsg } = await supabaseAdmin.from('messages').insert({ conversation_id: id, role: 'user', content }).select().single();
     
+    // جلب السجل وتنظيفه (دمج الرسائل المتتالية)
     const { data: history } = await supabaseAdmin.from('messages').select('role, content').eq('conversation_id', id).order('created_at', { ascending: true }).limit(20);
-    const geminiContents = (history || []).map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content || '' }]
-    }));
-
-    const response = await callGemini(geminiContents);
-    const aiText = extractText(response) || '⚠️ لم يتم استلام رد.';
-
-    const { data: aiMsg } = await supabaseAdmin.from('messages').insert({ conversation_id: id, role: 'assistant', content: aiText }).select().single();
     
-    // تحديث وقت المحادثة لترتفع للأعلى
+    const geminiContents = [];
+    (history || []).forEach(m => {
+      const role = m.role === 'assistant' ? 'model' : 'user';
+      const text = m.content || '';
+      const lastItem = geminiContents[geminiContents.length - 1];
+      
+      if (lastItem && lastItem.role === role) {
+        lastItem.parts[0].text += '\n\n' + text; // دمج الرسائل المتتالية لتجنب خطأ Gemini
+      } else {
+        geminiContents.push({ role, parts: [{ text }] });
+      }
+    });
+
+    // إرسال الطلب لجوجل
+    const response = await callGemini(geminiContents);
+    const aiText = extractText(response) || '⚠️ لم يتم استلام رد صحيح من النموذج.';
+
+    // حفظ رد الذكاء وتحديث وقت المحادثة
+    const { data: aiMsg } = await supabaseAdmin.from('messages').insert({ conversation_id: id, role: 'assistant', content: aiText }).select().single();
     await supabaseAdmin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', id);
     
     res.json({ userMessage: userMsg, aiMessage: aiMsg });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    console.error(err);
+    res.status(500).json({ error: 'حدث خطأ في معالجة طلبك.' });
   }
 });
 
