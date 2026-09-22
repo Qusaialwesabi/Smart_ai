@@ -19,7 +19,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseAn
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// Gemini Keys Configuration
+// Gemini Keys Setup
 const rawKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '').trim();
 const GEMINI_KEYS = rawKeys.split(',').map(k => k.trim()).filter(Boolean);
 for (let i = 1; i <= 500; i++) {
@@ -27,12 +27,11 @@ for (let i = 1; i <= 500; i++) {
   if (k) GEMINI_KEYS.push(k);
 }
 
-// نموذج الدردشة والنصوص المعتمد
 const MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
 const GEMINI_PATH = `/v1beta/models/${MODEL}:generateContent`;
 
-console.log(`✅ Loaded ${GEMINI_KEYS.length} Gemini key(s). Using model: ${MODEL}`);
+console.log(`✅ Loaded ${GEMINI_KEYS.length} Gemini key(s). Model: ${MODEL}`);
 
 const keyStates = GEMINI_KEYS.map((key, idx) => ({
   key, idx, exhaustedUntil: 0, successCount: 0, failCount: 0, lastUsed: 0,
@@ -54,27 +53,24 @@ async function callGemini(contents, endpoint = GEMINI_PATH, retries = 2) {
     if (!state) throw new Error('All keys exhausted.');
     state.lastUsed = Date.now();
     try {
+      const payload = {
+        contents,
+        systemInstruction: {
+          parts: [{ text: "أنت مساعد برمجي محترف. عند إرجاع أكواد برمجية (مثل HTML, CSS, JavaScript)، قم دائماً بتغليف الأكواد داخل علامات تنصيص الأكواد المظلمة ```language ... ``` ولا تقم باختصار الأكواد أبداً." }]
+        },
+        generationConfig: {
+          maxOutputTokens: 8192,
+        }
+      };
+
       const res = await fetch(`${GEMINI_BASE}${endpoint}?key=${state.key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents }),
+        body: JSON.stringify(payload),
       });
+
       if (res.status === 429) {
-        const body = await res.text();
-        let retrySec = 60;
-        try {
-          const j = JSON.parse(body);
-          const ri = (j.error?.details || []).find(d => d['@type']?.includes('RetryInfo'));
-          if (ri?.retryDelay) {
-            const m = String(ri.retryDelay).match(/(\d+)/);
-            if (m) retrySec = parseInt(m[1]) + 5;
-          }
-        } catch (_) {}
-        state.exhaustedUntil = Date.now() + retrySec * 1000;
-        continue;
-      }
-      if (res.status === 503 || res.status === 500) {
-        state.exhaustedUntil = Date.now() + 15000;
+        state.exhaustedUntil = Date.now() + 60000;
         continue;
       }
       if (!res.ok) { state.failCount++; continue; }
@@ -94,76 +90,11 @@ function extractText(data) {
   return parts.map(p => p.text || '').filter(Boolean).join('\n').trim();
 }
 
-// File upload to Gemini
-async function uploadToGemini(buffer, mimeType, displayName) {
-  const state = pickKey();
-  if (!state) throw new Error('No keys.');
-  const startRes = await fetch(`${GEMINI_BASE}/upload/v1beta/files?key=${state.key}`, {
-    method: 'POST',
-    headers: {
-      'X-Goog-Upload-Protocol': 'resumable',
-      'X-Goog-Upload-Command': 'start',
-      'X-Goog-Upload-Header-Content-Length': buffer.length.toString(),
-      'X-Goog-Upload-Header-Content-Type': mimeType,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ file: { display_name: displayName || 'upload' } }),
-  });
-  if (!startRes.ok) throw new Error('Start upload failed.');
-  const uploadUrl = startRes.headers.get('X-Goog-Upload-URL');
-  if (!uploadUrl) throw new Error('No upload URL');
-  const uploadRes = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Length': buffer.length.toString(),
-      'X-Goog-Upload-Offset': '0',
-      'X-Goog-Upload-Command': 'upload, finalize',
-    },
-    body: buffer,
-  });
-  if (!uploadRes.ok) throw new Error('Upload failed');
-  const fi = await uploadRes.json();
-  return fi.file;
-}
-
-async function waitForFileActive(fileName, maxWaitMs = 60000) {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    const state = pickKey();
-    if (!state) throw new Error('No keys.');
-    const res = await fetch(`${GEMINI_BASE}/v1beta/${fileName}?key=${state.key}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.state === 'ACTIVE') return data;
-      if (data.state === 'FAILED') throw new Error('Processing failed');
-    }
-    await new Promise(r => setTimeout(r, 2000));
-  }
-  throw new Error('Timeout');
-}
-
-function getMimeCategory(mt) {
-  if (!mt) return 'unknown';
-  if (mt.startsWith('image/')) return 'image';
-  if (mt.startsWith('video/')) return 'video';
-  if (mt.startsWith('audio/')) return 'audio';
-  if (mt.includes('pdf')) return 'pdf';
-  if (mt.includes('word') || mt.includes('document')) return 'document';
-  if (mt.includes('text') || mt.includes('json') || mt.includes('csv')) return 'text';
-  if (mt.includes('sheet') || mt.includes('excel')) return 'spreadsheet';
-  return 'other';
-}
-
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, 
-});
 
 function getAccessToken(req) {
   if (req.cookies?.sb_access_token) return req.cookies.sb_access_token;
@@ -189,244 +120,98 @@ async function requireAuth(req, res, next) {
   next();
 }
 
-const COOKIE_OPTS = {
-  httpOnly: true,
-  secure: true,
-  sameSite: 'lax',
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-};
+const COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 };
 
-// --- Auth Routes ---
+// --- Authentication Routes ---
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password required.' });
-    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email, password, email_confirm: true,
-    });
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true });
     if (error) return res.status(400).json({ error: error.message });
-
-    const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({ email, password });
-    if (signInError) return res.status(400).json({ error: signInError.message });
-
+    const { data: signInData } = await supabaseAdmin.auth.signInWithPassword({ email, password });
     res.cookie('sb_access_token', signInData.session.access_token, COOKIE_OPTS);
     res.json({ user: { id: data.user.id, email: data.user.email } });
-  } catch (err) {
-    res.status(500).json({ error: 'Something went wrong.' });
-  }
+  } catch { res.status(500).json({ error: 'Error' }); }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password required.' });
-
     const { data, error } = await supabaseAdmin.auth.signInWithPassword({ email, password });
-    if (error) return res.status(400).json({ error: 'Invalid email or password.' });
-
+    if (error) return res.status(400).json({ error: 'Invalid credentials' });
     res.cookie('sb_access_token', data.session.access_token, COOKIE_OPTS);
     res.json({ user: { id: data.user.id, email: data.user.email } });
-  } catch (err) {
-    res.status(500).json({ error: 'Something went wrong.' });
-  }
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('sb_access_token', { sameSite: 'lax', secure: true });
-  res.json({ success: true });
+  } catch { res.status(500).json({ error: 'Error' }); }
 });
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: { id: req.user.id, email: req.user.email } });
 });
 
-// --- Upload Route ---
-app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'لم يتم استلام ملف.' });
-    const { buffer, mimetype, originalname, size } = req.file;
-    
-    console.log(`جارٍ رفع ملف: ${originalname} بحجم ${Math.round(size/1024)}KB`);
-
-    const category = getMimeCategory(mimetype);
-    const fileInfo = await uploadToGemini(buffer, mimetype, originalname);
-    const activeFile = await waitForFileActive(fileInfo.name, 30000); 
-
-    console.log(`تم الرفع بنجاح: ${activeFile.name}`);
-    res.json({
-      success: true,
-      file: {
-        name: activeFile.name,
-        uri: activeFile.uri,
-        mimeType: activeFile.mimeType,
-        sizeBytes: activeFile.sizeBytes,
-        displayName: originalname,
-        category,
-      },
-    });
-  } catch (err) {
-    console.error("خطأ في رفع الملف:", err.message);
-    res.status(500).json({ error: 'فشل الرفع. قد يكون الملف معقداً أو الخادم مشغول.' });
-  }
-});
-
-// --- Conversations Routes ---
+// --- Conversation & Messaging Routes ---
 app.get('/api/conversations', requireAuth, async (req, res) => {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('conversations')
-      .select('id, title, created_at, updated_at')
-      .eq('user_id', req.user.id)
-      .order('updated_at', { ascending: false });
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ conversations: data || [] });
-  } catch (err) { res.status(500).json({ error: 'Error.' }); }
+  const { data } = await supabaseAdmin.from('conversations').select('*').eq('user_id', req.user.id).order('updated_at', { ascending: false });
+  res.json({ conversations: data || [] });
 });
 
 app.post('/api/conversations', requireAuth, async (req, res) => {
-  try {
-    const { title } = req.body;
-    const { data, error } = await supabaseAdmin
-      .from('conversations')
-      .insert({ user_id: req.user.id, title: title || 'محادثة جديدة' })
-      .select().single();
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ conversation: data });
-  } catch (err) { res.status(500).json({ error: 'Error.' }); }
-});
-
-app.patch('/api/conversations/:id', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title } = req.body;
-    const { error } = await supabaseAdmin
-      .from('conversations')
-      .update({ title })
-      .eq('id', id)
-      .eq('user_id', req.user.id);
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: 'Error.' }); }
-});
-
-app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { error } = await supabaseAdmin
-      .from('conversations')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', req.user.id);
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: 'Error.' }); }
+  const { data } = await supabaseAdmin.from('conversations').insert({ user_id: req.user.id, title: req.body.title || 'محادثة جديدة' }).select().single();
+  res.json({ conversation: data });
 });
 
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { data: conv, error: convErr } = await supabaseAdmin
-      .from('conversations').select('id').eq('id', id).eq('user_id', req.user.id).single();
-    if (convErr || !conv) return res.status(404).json({ error: 'Not found.' });
-
-    const { data, error } = await supabaseAdmin
-      .from('messages')
-      .select('id, role, content, created_at, attachment, image_url')
-      .eq('conversation_id', id).order('created_at', { ascending: true });
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ messages: data || [] });
-  } catch (err) { res.status(500).json({ error: 'Error.' }); }
+  const { data } = await supabaseAdmin.from('messages').select('*').eq('conversation_id', req.params.id).order('created_at', { ascending: true });
+  res.json({ messages: data || [] });
 });
 
 app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { content, attachment } = req.body;
-    if ((!content || !content.trim()) && !attachment) return res.status(400).json({ error: 'Message required.' });
+    const { content } = req.body;
+    
+    const { data: userMsg } = await supabaseAdmin.from('messages').insert({ conversation_id: id, role: 'user', content }).select().single();
+    
+    const { data: history } = await supabaseAdmin.from('messages').select('role, content').eq('conversation_id', id).order('created_at', { ascending: true }).limit(20);
+    const geminiContents = (history || []).map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content || '' }]
+    }));
 
-    const { data: conv, error: convErr } = await supabaseAdmin
-      .from('conversations').select('id, title')
-      .eq('id', id).eq('user_id', req.user.id).single();
-    if (convErr || !conv) return res.status(404).json({ error: 'Not found.' });
+    const response = await callGemini(geminiContents);
+    const aiText = extractText(response) || '⚠️ لم يتم استلام رد.';
 
-    const userMsgContent = (content || '').trim();
-    const { data: userMsg, error: userErr } = await supabaseAdmin
-      .from('messages')
-      .insert({ conversation_id: id, role: 'user', content: userMsgContent, attachment: attachment || null })
-      .select().single();
-    if (userErr) return res.status(500).json({ error: userErr.message });
-
-    const { data: history } = await supabaseAdmin
-      .from('messages').select('role, content, attachment')
-      .eq('conversation_id', id).order('created_at', { ascending: true }).limit(20);
-
-    const geminiContents = (history || []).map(m => {
-      const parts = [];
-      if (m.attachment?.uri && m.attachment?.mimeType) {
-        parts.push({ fileData: { fileUri: m.attachment.uri, mimeType: m.attachment.mimeType } });
-      }
-      if (m.content) parts.push({ text: m.content });
-      if (parts.length === 0) parts.push({ text: '(empty)' });
-      return { role: m.role === 'assistant' ? 'model' : 'user', parts };
-    });
-
-    let aiText = '';
-    try {
-      const response = await callGemini(geminiContents);
-      aiText = extractText(response) || '⚠️ لم يتم استلام رد.';
-    } catch (e) {
-      aiText = '⚠️ حدث خطأ. حاول لاحقاً.';
-    }
-
-    const { data: aiMsg, error: aiErr } = await supabaseAdmin
-      .from('messages')
-      .insert({ conversation_id: id, role: 'assistant', content: aiText })
-      .select().single();
-    if (aiErr) return res.status(500).json({ error: aiErr.message });
-
+    const { data: aiMsg } = await supabaseAdmin.from('messages').insert({ conversation_id: id, role: 'assistant', content: aiText }).select().single();
+    
     res.json({ userMessage: userMsg, aiMessage: aiMsg });
   } catch (err) {
-    res.status(500).json({ error: 'Error.' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// --- Smart Image Generation Route (Free AI Engine Solution) ---
+// --- Image Route via Free Open Engine ---
 app.post('/api/generate-image', requireAuth, async (req, res) => {
   try {
     const { prompt } = req.body;
-    if (!prompt) return res.status(400).json({ success: false, error: 'يجب كتابة وصف للصورة' });
+    if (!prompt) return res.status(400).json({ success: false, error: 'الوصف مطلوب' });
 
-    console.log(`🖼️ جارٍ توليد صورة مجانية للوصف: ${prompt}`);
-
-    // تحويل الوصف للإنجليزية مجاناً لضمان أعلى جودة جرافيك
     let englishPrompt = prompt;
     try {
-      const translationRes = await callGemini([
-        { role: 'user', parts: [{ text: `Translate this image prompt to English briefly and clearly: "${prompt}". Output only the English translation.` }] }
-      ]);
+      const translationRes = await callGemini([{ role: 'user', parts: [{ text: `Translate to English: "${prompt}". Output only translation.` }] }]);
       const translated = extractText(translationRes);
       if (translated) englishPrompt = translated;
-    } catch (e) {
-      console.log('ملاحظة: تعذر الترجمة للإنجليزية، استخدام النص الأصلي');
-    }
+    } catch (_) {}
 
-    // جلب الصورة مباشرة من محرك الصور المفتوح والراقي
     const cleanPrompt = encodeURIComponent(englishPrompt.trim());
     const imageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
 
     const imageRes = await fetch(imageUrl);
-    if (!imageRes.ok) throw new Error('فشل جلب الصورة من المحرك المجاني.');
-
     const arrayBuffer = await imageRes.arrayBuffer();
     const b64 = Buffer.from(arrayBuffer).toString('base64');
     const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
 
     res.json({ success: true, image: { mimeType, data: b64 } });
   } catch (err) {
-    console.error("Image Engine Error:", err.message);
-    res.status(500).json({ success: false, error: 'تعذر توليد الصورة حالياً. حاول لاحقاً.' });
+    res.status(500).json({ success: false, error: 'تعذر توليد الصورة' });
   }
 });
 
@@ -434,7 +219,4 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Smart AI running on ${PORT}`);
-  console.log(`🔑 Keys: ${GEMINI_KEYS.length} | Model: ${MODEL}`);
-});
+app.listen(PORT, () => console.log(`🚀 Smart AI running on ${PORT}`));
