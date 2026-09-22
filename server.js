@@ -19,7 +19,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseAn
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// Gemini Keys
+// Gemini Keys Configuration
 const rawKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '').trim();
 const GEMINI_KEYS = rawKeys.split(',').map(k => k.trim()).filter(Boolean);
 for (let i = 1; i <= 500; i++) {
@@ -27,11 +27,12 @@ for (let i = 1; i <= 500; i++) {
   if (k) GEMINI_KEYS.push(k);
 }
 
+// استخدام نموذج gemini-3.5-flash-lite للدردشة والنصوص
 const MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
 const GEMINI_PATH = `/v1beta/models/${MODEL}:generateContent`;
 
-console.log(`✅ Loaded ${GEMINI_KEYS.length} Gemini key(s).`);
+console.log(`✅ Loaded ${GEMINI_KEYS.length} Gemini key(s). Using model: ${MODEL}`);
 
 const keyStates = GEMINI_KEYS.map((key, idx) => ({
   key, idx, exhaustedUntil: 0, successCount: 0, failCount: 0, lastUsed: 0,
@@ -159,7 +160,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// تقليل حجم الملف المسموح به إلى 10 ميجابايت لحماية خوادم Render المجانية
+// حماية الخادم برفع ملفات حتى 10 ميجابايت كحد أقصى لمنع الانهيار
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, 
@@ -252,7 +253,6 @@ app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => 
 
     const category = getMimeCategory(mimetype);
     const fileInfo = await uploadToGemini(buffer, mimetype, originalname);
-    
     const activeFile = await waitForFileActive(fileInfo.name, 30000); 
 
     console.log(`تم الرفع بنجاح: ${activeFile.name}`);
@@ -397,40 +397,48 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 app.post('/api/generate-image', requireAuth, async (req, res) => {
   try {
     const { prompt } = req.body;
-    if (!prompt) return res.status(400).json({ success: false, error: 'يجب كتابة وصف' });
+    if (!prompt) return res.status(400).json({ success: false, error: 'يجب كتابة وصف للصورة' });
 
-    const state = pickKey();
-    if (!state) return res.status(500).json({ success: false, error: 'لا يوجد مفاتيح' });
+    const imageModel = 'gemini-2.5-flash';
+    const response = await callGemini([
+      { role: 'user', parts: [{ text: `Generate an image based on this prompt: ${prompt}` }] }
+    ], `/v1beta/models/${imageModel}:generateContent`);
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${state.key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        instances: [{ prompt: prompt }],
-        parameters: { sampleCount: 1, aspectRatio: "1:1" }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('فشل توليد الصورة من خادم جوجل');
-    }
+    const candidate = response.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
     
-    const data = await response.json();
-    const b64 = data.predictions?.[0]?.bytesBase64Encoded;
-    if (!b64) throw new Error('لم يتم إرجاع الصورة');
+    let imagePart = parts.find(p => p.inlineData || p.inline_data);
+    if (!imagePart) {
+      for (const p of parts) {
+        if (p.fileData) {
+          imagePart = p;
+          break;
+        }
+      }
+    }
 
-    res.json({ success: true, image: { mimeType: 'image/jpeg', data: b64 } });
+    if (!imagePart || (!imagePart.inlineData && !imagePart.inline_data && !imagePart.fileData)) {
+      throw new Error('لم يتمكن الخادم من إرجاع بيانات الصورة.');
+    }
+
+    const dataObj = imagePart.inlineData || imagePart.inline_data;
+    const mimeType = dataObj?.mimeType || 'image/jpeg';
+    const b64 = dataObj?.data;
+
+    if (!b64) throw new Error('بيانات الصورة غير موجودة في الرد');
+
+    res.json({ success: true, image: { mimeType, data: b64 } });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Image Generation Error:", err.message);
+    res.status(500).json({ success: false, error: 'تعذر توليد الصورة حالياً.' });
   }
 });
 
-// توجيه المسارات غير المعروفة للواجهة الأمامية
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
   console.log(`🚀 Smart AI running on ${PORT}`);
-  console.log(`🔑 Keys: ${GEMINI_KEYS.length}`);
+  console.log(`🔑 Keys: ${GEMINI_KEYS.length} | Model: ${MODEL}`);
 });
