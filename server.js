@@ -27,7 +27,7 @@ for (let i = 1; i <= 500; i++) {
   if (k) GEMINI_KEYS.push(k);
 }
 
-// نموذج الدردشة والنصوص
+// نموذج الدردشة والنصوص المعتمد
 const MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
 const GEMINI_PATH = `/v1beta/models/${MODEL}:generateContent`;
@@ -392,37 +392,41 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   }
 });
 
-// --- Generate Image Route (Fixed using Nano Banana / Flash Image model endpoint) ---
+// --- Smart Image Generation Route (Free AI Engine Solution) ---
 app.post('/api/generate-image', requireAuth, async (req, res) => {
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ success: false, error: 'يجب كتابة وصف للصورة' });
 
-    // استخدام النموذج المخصص لتوليد الصور عبر الـ API
-    const imageModel = 'gemini-2.5-flash-image';
-    const response = await callGemini([
-      { role: 'user', parts: [{ text: prompt }] }
-    ], `/v1beta/models/${imageModel}:generateContent`);
+    console.log(`🖼️ جارٍ توليد صورة مجانية للوصف: ${prompt}`);
 
-    const candidate = response.candidates?.[0];
-    const parts = candidate?.content?.parts || [];
-    
-    let imagePart = parts.find(p => p.inlineData || p.inline_data || p.fileData);
-
-    if (!imagePart) {
-      throw new Error('لم يتم إرجاع بيانات الصورة من الخادم.');
+    // تحويل الوصف للإنجليزية مجاناً لضمان أعلى جودة جرافيك
+    let englishPrompt = prompt;
+    try {
+      const translationRes = await callGemini([
+        { role: 'user', parts: [{ text: `Translate this image prompt to English briefly and clearly: "${prompt}". Output only the English translation.` }] }
+      ]);
+      const translated = extractText(translationRes);
+      if (translated) englishPrompt = translated;
+    } catch (e) {
+      console.log('ملاحظة: تعذر الترجمة للإنجليزية، استخدام النص الأصلي');
     }
 
-    const dataObj = imagePart.inlineData || imagePart.inline_data;
-    const mimeType = dataObj?.mimeType || 'image/png';
-    const b64 = dataObj?.data;
+    // جلب الصورة مباشرة من محرك الصور المفتوح والراقي
+    const cleanPrompt = encodeURIComponent(englishPrompt.trim());
+    const imageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
 
-    if (!b64) throw new Error('محتوى الصورة فارغ');
+    const imageRes = await fetch(imageUrl);
+    if (!imageRes.ok) throw new Error('فشل جلب الصورة من المحرك المجاني.');
+
+    const arrayBuffer = await imageRes.arrayBuffer();
+    const b64 = Buffer.from(arrayBuffer).toString('base64');
+    const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
 
     res.json({ success: true, image: { mimeType, data: b64 } });
   } catch (err) {
-    console.error("Image Generation Error:", err.message);
-    res.status(500).json({ success: false, error: 'تعذر توليد الصورة حالياً. تأكد من دعم المفتاح.' });
+    console.error("Image Engine Error:", err.message);
+    res.status(500).json({ success: false, error: 'تعذر توليد الصورة حالياً. حاول لاحقاً.' });
   }
 });
 
