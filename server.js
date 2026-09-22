@@ -28,10 +28,8 @@ for (let i = 1; i <= 500; i++) {
 }
 
 const MODEL = 'gemini-3.5-flash-lite';
-const IMAGE_MODEL = 'gemini-2.5-flash-image';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
 const GEMINI_PATH = `/v1beta/models/${MODEL}:generateContent`;
-const IMAGE_PATH = `/v1beta/models/${IMAGE_MODEL}:generateContent`;
 
 console.log(`✅ Loaded ${GEMINI_KEYS.length} Gemini key(s).`);
 
@@ -95,7 +93,7 @@ function extractText(data) {
   return parts.map(p => p.text || '').filter(Boolean).join('\n').trim();
 }
 
-// File upload
+// File upload to Gemini
 async function uploadToGemini(buffer, mimeType, displayName) {
   const state = pickKey();
   if (!state) throw new Error('No keys.');
@@ -159,12 +157,12 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
-// مجلد الواجهة الأمامية
 app.use(express.static(path.join(__dirname, 'public')));
 
+// تقليل حجم الملف المسموح به إلى 10 ميجابايت لحماية خوادم Render المجانية
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, 
 });
 
 function getAccessToken(req) {
@@ -198,6 +196,7 @@ const COOKIE_OPTS = {
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
+// --- Auth Routes ---
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -243,16 +242,20 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: { id: req.user.id, email: req.user.email } });
 });
 
+// --- Upload Route ---
 app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file.' });
+    if (!req.file) return res.status(400).json({ error: 'لم يتم استلام ملف.' });
     const { buffer, mimetype, originalname, size } = req.file;
-    if (size > 100 * 1024 * 1024) return res.status(400).json({ error: 'File too large.' });
+    
+    console.log(`جارٍ رفع ملف: ${originalname} بحجم ${Math.round(size/1024)}KB`);
 
     const category = getMimeCategory(mimetype);
     const fileInfo = await uploadToGemini(buffer, mimetype, originalname);
-    const activeFile = await waitForFileActive(fileInfo.name);
+    
+    const activeFile = await waitForFileActive(fileInfo.name, 30000); 
 
+    console.log(`تم الرفع بنجاح: ${activeFile.name}`);
     res.json({
       success: true,
       file: {
@@ -265,10 +268,12 @@ app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => 
       },
     });
   } catch (err) {
-    res.status(500).json({ error: 'Upload failed.' });
+    console.error("خطأ في رفع الملف:", err.message);
+    res.status(500).json({ error: 'فشل الرفع. قد يكون الملف معقداً أو الخادم مشغول.' });
   }
 });
 
+// --- Conversations Routes ---
 app.get('/api/conversations', requireAuth, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
@@ -286,10 +291,37 @@ app.post('/api/conversations', requireAuth, async (req, res) => {
     const { title } = req.body;
     const { data, error } = await supabaseAdmin
       .from('conversations')
-      .insert({ user_id: req.user.id, title: title || 'New Chat' })
+      .insert({ user_id: req.user.id, title: title || 'محادثة جديدة' })
       .select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ conversation: data });
+  } catch (err) { res.status(500).json({ error: 'Error.' }); }
+});
+
+app.patch('/api/conversations/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body;
+    const { error } = await supabaseAdmin
+      .from('conversations')
+      .update({ title })
+      .eq('id', id)
+      .eq('user_id', req.user.id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Error.' }); }
+});
+
+app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabaseAdmin
+      .from('conversations')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', req.user.id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Error.' }); }
 });
 
@@ -361,7 +393,39 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   }
 });
 
-// توجيه أي مسار آخر لملف الواجهة الأمامية
+// --- Generate Image Route ---
+app.post('/api/generate-image', requireAuth, async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) return res.status(400).json({ success: false, error: 'يجب كتابة وصف' });
+
+    const state = pickKey();
+    if (!state) return res.status(500).json({ success: false, error: 'لا يوجد مفاتيح' });
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${state.key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instances: [{ prompt: prompt }],
+        parameters: { sampleCount: 1, aspectRatio: "1:1" }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('فشل توليد الصورة من خادم جوجل');
+    }
+    
+    const data = await response.json();
+    const b64 = data.predictions?.[0]?.bytesBase64Encoded;
+    if (!b64) throw new Error('لم يتم إرجاع الصورة');
+
+    res.json({ success: true, image: { mimeType: 'image/jpeg', data: b64 } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// توجيه المسارات غير المعروفة للواجهة الأمامية
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
