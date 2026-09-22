@@ -168,7 +168,7 @@ app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
-// --- مسارات الرسائل ---
+// --- مسارات الرسائل (سريعة وخالية من عقبات الصور) ---
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   const { data } = await supabaseAdmin.from('messages').select('*').eq('conversation_id', req.params.id).order('created_at', { ascending: true });
   res.json({ messages: data || [] });
@@ -179,30 +179,19 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     const { id } = req.params;
     const { content } = req.body;
     
-    // حفظ رسالة المستخدم
+    // 1. حفظ رسالة المستخدم
     const { data: userMsg } = await supabaseAdmin.from('messages').insert({ conversation_id: id, role: 'user', content }).select().single();
     
-    // جلب السجل وتنظيفه (دمج الرسائل المتتالية)
-    const { data: history } = await supabaseAdmin.from('messages').select('role, content').eq('conversation_id', id).order('created_at', { ascending: true }).limit(20);
-    
-    const geminiContents = [];
-    (history || []).forEach(m => {
-      const role = m.role === 'assistant' ? 'model' : 'user';
-      const text = m.content || '';
-      const lastItem = geminiContents[geminiContents.length - 1];
-      
-      if (lastItem && lastItem.role === role) {
-        lastItem.parts[0].text += '\n\n' + text; // دمج الرسائل المتتالية لتجنب خطأ Gemini
-      } else {
-        geminiContents.push({ role, parts: [{ text }] });
-      }
-    });
+    // 2. إرسال الرسالة الحالية مباشرة لجوجل لضمان السرعة الخارقة والفورية
+    const geminiContents = [
+      { role: 'user', parts: [{ text: content }] }
+    ];
 
-    // إرسال الطلب لجوجل
+    // 3. استدعاء نموذج Gemini
     const response = await callGemini(geminiContents);
     const aiText = extractText(response) || '⚠️ لم يتم استلام رد صحيح من النموذج.';
 
-    // حفظ رد الذكاء وتحديث وقت المحادثة
+    // 4. حفظ رد الذكاء وتحديث وقت المحادثة
     const { data: aiMsg } = await supabaseAdmin.from('messages').insert({ conversation_id: id, role: 'assistant', content: aiText }).select().single();
     await supabaseAdmin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', id);
     
