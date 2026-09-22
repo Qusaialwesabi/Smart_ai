@@ -1,7 +1,6 @@
 let currentConvId = null;
 let isSignUp = false;
 
-// عناصر الواجهة
 const authScreen = document.getElementById('auth-screen');
 const appContainer = document.getElementById('app-container');
 const authTitle = document.getElementById('auth-title');
@@ -61,7 +60,6 @@ logoutBtn.addEventListener('click', async () => {
 
 toggleSidebar.addEventListener('click', () => sidebar.classList.toggle('open'));
 
-// المحادثات (تحميل، إنشاء، تعديل، حذف)
 async function loadConversations() {
   try {
     const res = await fetch('/api/conversations');
@@ -70,8 +68,7 @@ async function loadConversations() {
     
     if (data.conversations && data.conversations.length > 0) {
       data.conversations.forEach(c => renderConvItem(c));
-      // تحديد أول محادثة لو لم تكن هناك محادثة نشطة
-      if (!currentConvId && data.conversations.some(c => c.id === currentConvId) === false) {
+      if (!currentConvId || !data.conversations.find(c => c.id === currentConvId)) {
         selectConv(data.conversations[0].id);
       }
     } else {
@@ -119,9 +116,8 @@ async function selectConv(id) {
   sidebar.classList.remove('open');
 }
 
-// دالة تعديل اسم المحادثة
 async function editConv(event, id, oldTitle) {
-  event.stopPropagation(); // منع تحديد المحادثة عند ضغط زر التعديل
+  event.stopPropagation();
   const newTitle = prompt("أدخل الاسم الجديد للمحادثة:", oldTitle);
   if (!newTitle || newTitle === oldTitle) return;
   
@@ -133,11 +129,8 @@ async function editConv(event, id, oldTitle) {
   if (res.ok) loadConversations();
 }
 
-// دالة حذف المحادثة مع رسالة تأكيد
 async function deleteConv(event, id) {
-  event.stopPropagation(); // منع تحديد المحادثة عند ضغط زر الحذف
-  
-  // النافذة التأكيدية تمنع الحذف من النقرة الأولى
+  event.stopPropagation();
   const confirmDelete = confirm("هل أنت متأكد أنك تريد حذف هذه المحادثة بشكل نهائي؟");
   if (!confirmDelete) return;
   
@@ -179,13 +172,22 @@ async function sendMessage() {
   messageInput.value = '';
   renderMessage(text, 'user');
 
-  const res = await fetch(`/api/conversations/${currentConvId}/messages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content: text }),
-  });
-  const data = await res.json();
-  if (data.aiMessage) renderMessage(data.aiMessage.content, 'assistant');
+  try {
+    const res = await fetch(`/api/conversations/${currentConvId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text }),
+    });
+    const data = await res.json();
+    
+    if (res.ok && data.aiMessage) {
+      renderMessage(data.aiMessage.content, 'assistant');
+    } else {
+      renderMessage('⚠️ حدث خطأ: ' + (data.error || 'تعذر الاتصال بالنموذج.'), 'assistant');
+    }
+  } catch (err) {
+    renderMessage('⚠️ خطأ في الشبكة أو أن الخادم لا يستجيب.', 'assistant');
+  }
 }
 
 sendBtn.addEventListener('click', sendMessage);
