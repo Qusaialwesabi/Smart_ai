@@ -27,7 +27,7 @@ for (let i = 1; i <= 500; i++) {
   if (k) GEMINI_KEYS.push(k);
 }
 
-// استخدام نموذج gemini-3.5-flash-lite للدردشة والنصوص
+// نموذج الدردشة والنصوص
 const MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
 const GEMINI_PATH = `/v1beta/models/${MODEL}:generateContent`;
@@ -160,7 +160,6 @@ app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// حماية الخادم برفع ملفات حتى 10 ميجابايت كحد أقصى لمنع الانهيار
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, 
@@ -393,44 +392,37 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   }
 });
 
-// --- Generate Image Route ---
+// --- Generate Image Route (Fixed using Nano Banana / Flash Image model endpoint) ---
 app.post('/api/generate-image', requireAuth, async (req, res) => {
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ success: false, error: 'يجب كتابة وصف للصورة' });
 
-    const imageModel = 'gemini-2.5-flash';
+    // استخدام النموذج المخصص لتوليد الصور عبر الـ API
+    const imageModel = 'gemini-2.5-flash-image';
     const response = await callGemini([
-      { role: 'user', parts: [{ text: `Generate an image based on this prompt: ${prompt}` }] }
+      { role: 'user', parts: [{ text: prompt }] }
     ], `/v1beta/models/${imageModel}:generateContent`);
 
     const candidate = response.candidates?.[0];
     const parts = candidate?.content?.parts || [];
     
-    let imagePart = parts.find(p => p.inlineData || p.inline_data);
-    if (!imagePart) {
-      for (const p of parts) {
-        if (p.fileData) {
-          imagePart = p;
-          break;
-        }
-      }
-    }
+    let imagePart = parts.find(p => p.inlineData || p.inline_data || p.fileData);
 
-    if (!imagePart || (!imagePart.inlineData && !imagePart.inline_data && !imagePart.fileData)) {
-      throw new Error('لم يتمكن الخادم من إرجاع بيانات الصورة.');
+    if (!imagePart) {
+      throw new Error('لم يتم إرجاع بيانات الصورة من الخادم.');
     }
 
     const dataObj = imagePart.inlineData || imagePart.inline_data;
-    const mimeType = dataObj?.mimeType || 'image/jpeg';
+    const mimeType = dataObj?.mimeType || 'image/png';
     const b64 = dataObj?.data;
 
-    if (!b64) throw new Error('بيانات الصورة غير موجودة في الرد');
+    if (!b64) throw new Error('محتوى الصورة فارغ');
 
     res.json({ success: true, image: { mimeType, data: b64 } });
   } catch (err) {
     console.error("Image Generation Error:", err.message);
-    res.status(500).json({ success: false, error: 'تعذر توليد الصورة حالياً.' });
+    res.status(500).json({ success: false, error: 'تعذر توليد الصورة حالياً. تأكد من دعم المفتاح.' });
   }
 });
 
