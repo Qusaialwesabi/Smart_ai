@@ -3,7 +3,6 @@ const express = require('express');
 const fetch = require('node-fetch');
 const cookieParser = require('cookie-parser');
 const path = require('path');
-const multer = require('multer');
 const helmet = require('helmet');
 const compression = require('compression');
 const { createClient } = require('@supabase/supabase-js');
@@ -19,7 +18,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseAn
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// Gemini Keys Setup
+// إعداد مفاتيح Gemini
 const rawKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '').trim();
 const GEMINI_KEYS = rawKeys.split(',').map(k => k.trim()).filter(Boolean);
 for (let i = 1; i <= 500; i++) {
@@ -30,8 +29,6 @@ for (let i = 1; i <= 500; i++) {
 const MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
 const GEMINI_PATH = `/v1beta/models/${MODEL}:generateContent`;
-
-console.log(`✅ Loaded ${GEMINI_KEYS.length} Gemini key(s). Model: ${MODEL}`);
 
 const keyStates = GEMINI_KEYS.map((key, idx) => ({
   key, idx, exhaustedUntil: 0, successCount: 0, failCount: 0, lastUsed: 0,
@@ -45,34 +42,28 @@ function pickKey() {
   return available[0];
 }
 
-async function callGemini(contents, endpoint = GEMINI_PATH, retries = 2) {
-  if (GEMINI_KEYS.length === 0) throw new Error('No API keys.');
+async function callGemini(contents, retries = 2) {
+  if (GEMINI_KEYS.length === 0) throw new Error('لا توجد مفاتيح API.');
   const maxAttempts = GEMINI_KEYS.length + retries;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const state = pickKey();
-    if (!state) throw new Error('All keys exhausted.');
+    if (!state) throw new Error('جميع المفاتيح مستهلكة مؤقتاً.');
     state.lastUsed = Date.now();
     try {
       const payload = {
         contents,
         systemInstruction: {
-          parts: [{ text: "أنت مساعد برمجي محترف. عند إرجاع أكواد برمجية (مثل HTML, CSS, JavaScript)، قم دائماً بتغليف الأكواد داخل علامات تنصيص الأكواد المظلمة ```language ... ``` ولا تقم باختصار الأكواد أبداً." }]
-        },
-        generationConfig: {
-          maxOutputTokens: 8192,
+          parts: [{ text: "أنت مساعد برمجي وذكي. أجب بدقة واستخدم markdown code blocks للأكواد." }]
         }
       };
 
-      const res = await fetch(`${GEMINI_BASE}${endpoint}?key=${state.key}`, {
+      const res = await fetch(`${GEMINI_BASE}${GEMINI_PATH}?key=${state.key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (res.status === 429) {
-        state.exhaustedUntil = Date.now() + 60000;
-        continue;
-      }
+      if (res.status === 429) { state.exhaustedUntil = Date.now() + 60000; continue; }
       if (!res.ok) { state.failCount++; continue; }
       const data = await res.json();
       state.successCount++;
@@ -82,7 +73,7 @@ async function callGemini(contents, endpoint = GEMINI_PATH, retries = 2) {
       continue;
     }
   }
-  throw new Error('All attempts failed.');
+  throw new Error('فشلت جميع المحاولات.');
 }
 
 function extractText(data) {
@@ -92,7 +83,7 @@ function extractText(data) {
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(compression());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -122,7 +113,7 @@ async function requireAuth(req, res, next) {
 
 const COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 };
 
-// --- Authentication Routes ---
+// --- مسارات المصادقة ---
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -144,11 +135,16 @@ app.post('/api/auth/login', async (req, res) => {
   } catch { res.status(500).json({ error: 'Error' }); }
 });
 
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('sb_access_token', { sameSite: 'lax', secure: true });
+  res.json({ success: true });
+});
+
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: { id: req.user.id, email: req.user.email } });
 });
 
-// --- Conversation & Messaging Routes ---
+// --- مسارات المحادثات ---
 app.get('/api/conversations', requireAuth, async (req, res) => {
   const { data } = await supabaseAdmin.from('conversations').select('*').eq('user_id', req.user.id).order('updated_at', { ascending: false });
   res.json({ conversations: data || [] });
@@ -159,6 +155,22 @@ app.post('/api/conversations', requireAuth, async (req, res) => {
   res.json({ conversation: data });
 });
 
+// تعديل اسم المحادثة
+app.put('/api/conversations/:id', requireAuth, async (req, res) => {
+  const { title } = req.body;
+  const { data, error } = await supabaseAdmin.from('conversations').update({ title }).eq('id', req.params.id).eq('user_id', req.user.id).select().single();
+  if (error) return res.status(400).json({ error: 'تعذر التحديث' });
+  res.json({ success: true, conversation: data });
+});
+
+// حذف المحادثة
+app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
+  const { error } = await supabaseAdmin.from('conversations').delete().eq('id', req.params.id).eq('user_id', req.user.id);
+  if (error) return res.status(400).json({ error: 'تعذر الحذف' });
+  res.json({ success: true });
+});
+
+// --- مسارات الرسائل ---
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   const { data } = await supabaseAdmin.from('messages').select('*').eq('conversation_id', req.params.id).order('created_at', { ascending: true });
   res.json({ messages: data || [] });
@@ -182,36 +194,12 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 
     const { data: aiMsg } = await supabaseAdmin.from('messages').insert({ conversation_id: id, role: 'assistant', content: aiText }).select().single();
     
+    // تحديث وقت المحادثة لترتفع للأعلى
+    await supabaseAdmin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', id);
+    
     res.json({ userMessage: userMsg, aiMessage: aiMsg });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// --- Image Route via Free Open Engine ---
-app.post('/api/generate-image', requireAuth, async (req, res) => {
-  try {
-    const { prompt } = req.body;
-    if (!prompt) return res.status(400).json({ success: false, error: 'الوصف مطلوب' });
-
-    let englishPrompt = prompt;
-    try {
-      const translationRes = await callGemini([{ role: 'user', parts: [{ text: `Translate to English: "${prompt}". Output only translation.` }] }]);
-      const translated = extractText(translationRes);
-      if (translated) englishPrompt = translated;
-    } catch (_) {}
-
-    const cleanPrompt = encodeURIComponent(englishPrompt.trim());
-    const imageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
-
-    const imageRes = await fetch(imageUrl);
-    const arrayBuffer = await imageRes.arrayBuffer();
-    const b64 = Buffer.from(arrayBuffer).toString('base64');
-    const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
-
-    res.json({ success: true, image: { mimeType, data: b64 } });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'تعذر توليد الصورة' });
   }
 });
 
@@ -219,4 +207,4 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => console.log(`🚀 Smart AI running on ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Smart AI Text-Only running on ${PORT}`));
