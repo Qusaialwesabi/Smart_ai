@@ -1,423 +1,256 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart AI Assistant</title>
-    <!-- Tailwind CSS للتصميم الاحترافي -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome للأيقونات -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        /* تنسيق شريط التمرير */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .typing-indicator span { animation: blink 1.4s infinite both; height: 6px; width: 6px; background: #3b82f6; border-radius: 50%; display: inline-block; margin: 0 1px; }
-        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart AI</title>
+  
+  <!-- CSS Fonts & Styles -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
+  
+  <!-- JavaScript Markdown & Syntax Highlighting Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --accent-color: #6366f1;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: #334155;
+      --user-msg-bg: #4f46e5;
+      --ai-msg-bg: #1e293b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      height: 100vh;
+      height: 100dvh; /* For mobile viewports */
+      overflow: hidden;
+    }
+
+    /* Container layout responsive */
+    #app-container {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    /* Sidebar logic */
+    #sidebar {
+      width: 260px;
+      background-color: #0b1120;
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.3s ease;
+      z-index: 100;
+    }
+
+    /* Main Chat Area */
+    #chat-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      position: relative;
+      background-color: var(--bg-color);
+    }
+
+    /* Header */
+    header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(8px);
+    }
+
+    .mobile-toggle {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-main);
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+
+    /* Messages Area */
+    #messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.6;
+      font-size: 0.95rem;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .message.user {
+      align-self: flex-start;
+      background-color: var(--user-msg-bg);
+      color: #fff;
+      border-bottom-right-radius: 2px;
+    }
+
+    .message.assistant {
+      align-self: flex-end;
+      background-color: var(--ai-msg-bg);
+      border: 1px solid var(--border-color);
+      border-bottom-left-radius: 2px;
+    }
+
+    /* Formatting for Markdown Code Blocks */
+    .message pre {
+      background-color: #090d16 !important;
+      border-radius: 8px;
+      padding: 12px;
+      margin: 10px 0;
+      overflow-x: auto;
+      direction: ltr;
+      text-align: left;
+      border: 1px solid #1e293b;
+    }
+
+    .message code {
+      font-family: 'Fira Code', Consolas, Monaco, monospace;
+      font-size: 0.88rem;
+    }
+
+    .message :not(pre) > code {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      direction: ltr;
+      display: inline-block;
+    }
+
+    .message img.generated-img {
+      max-width: 100%;
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+
+    /* Input Controls */
+    #input-area {
+      padding: 12px 16px;
+      background-color: var(--card-bg);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #message-input {
+      flex: 1;
+      background-color: var(--bg-color);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 12px 16px;
+      border-radius: 24px;
+      outline: none;
+      font-size: 0.95rem;
+    }
+
+    #message-input:focus {
+      border-color: var(--accent-color);
+    }
+
+    .btn-icon {
+      background-color: var(--accent-color);
+      color: #fff;
+      border: none;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn-icon:hover {
+      opacity: 0.9;
+    }
+
+    /* Mobile Responsive Logic */
+    @media (max-width: 768px) {
+      .mobile-toggle {
+        display: block;
+      }
+
+      #sidebar {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        transform: translateX(100%);
+      }
+
+      #sidebar.open {
+        transform: translateX(0);
+      }
+
+      .message {
+        max-width: 92%;
+      }
+    }
+  </style>
 </head>
-<body class="bg-gray-50 text-gray-800 h-screen flex overflow-hidden">
+<body>
 
-    <!-- شاشة تسجيل الدخول -->
-    <div id="auth-section" class="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center">
-        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
-            <div class="text-center mb-8">
-                <i class="fa-solid fa-robot text-4xl text-blue-600 mb-3"></i>
-                <h2 class="text-2xl font-bold text-gray-800">مرحباً بك في Smart AI</h2>
-                <p class="text-gray-500 text-sm mt-1">سجل دخولك للبدء بالمحادثة</p>
-            </div>
-            <div class="space-y-4">
-                <input type="email" id="email" placeholder="البريد الإلكتروني" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
-                <input type="password" id="password" placeholder="كلمة المرور" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
-                <div class="flex gap-3 pt-2">
-                    <button onclick="login()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition shadow-lg">دخول</button>
-                    <button onclick="signup()" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-3 rounded-lg transition border border-gray-300">حساب جديد</button>
-                </div>
-                <p id="auth-msg" class="text-red-500 text-sm text-center font-medium h-4"></p>
-            </div>
-        </div>
+  <div id="app-container">
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div style="padding: 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="font-size: 1.1rem;">المحادثات</h3>
+        <button id="new-chat-btn" style="background: var(--accent-color); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">جديد +</button>
+      </div>
+      <div id="conversations-list" style="flex: 1; overflow-y: auto; padding: 10px;"></div>
     </div>
 
-    <!-- التطبيق الرئيسي -->
-    <div id="app-section" class="flex w-full h-full hidden">
-        
-        <!-- الشريط الجانبي (Sidebar) -->
-        <div class="w-72 bg-gray-900 text-white flex flex-col h-full flex-shrink-0 transition-all duration-300 shadow-xl z-20">
-            <div class="p-4 border-b border-gray-700">
-                <button onclick="startNewConversation()" class="w-full flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-white py-3 rounded-lg transition duration-200">
-                    <i class="fa-solid fa-plus"></i> محادثة جديدة
-                </button>
-            </div>
-            
-            <div class="flex-1 overflow-y-auto p-3 space-y-2" id="conversations-list">
-                <!-- المحادثات ستظهر هنا -->
-            </div>
+    <!-- Main Chat Window -->
+    <div id="chat-main">
+      <header>
+        <button class="mobile-toggle" id="toggle-sidebar"><i class="fas fa-bars"></i></button>
+        <h2 style="font-size: 1.1rem; font-weight: 600;">Smart AI</h2>
+        <div style="width: 24px;"></div>
+      </header>
 
-            <div class="p-4 border-t border-gray-700 flex items-center justify-between">
-                <div class="flex items-center gap-2 overflow-hidden">
-                    <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm">
-                        <i class="fa-solid fa-user"></i>
-                    </div>
-                    <span id="user-email-display" class="text-sm truncate text-gray-300"></span>
-                </div>
-                <button onclick="logout()" class="text-gray-400 hover:text-red-400 transition" title="تسجيل خروج">
-                    <i class="fa-solid fa-right-from-bracket"></i>
-                </button>
-            </div>
-        </div>
+      <div id="messages-container"></div>
 
-        <!-- منطقة المحادثة -->
-        <div class="flex-1 flex flex-col h-full bg-white relative">
-            <!-- الهيدر -->
-            <div class="h-16 border-b border-gray-200 flex items-center justify-between px-6 bg-white shadow-sm z-10">
-                <h3 id="current-chat-title" class="font-semibold text-gray-800 text-lg">اختر أو ابدأ محادثة</h3>
-                
-                <!-- مفتاح وضع توليد الصور -->
-                <div class="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200">
-                    <span class="text-sm font-medium text-gray-600">توليد الصور</span>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="image-mode-toggle" class="sr-only peer">
-                        <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
-                    </label>
-                </div>
-            </div>
-
-            <!-- الرسائل -->
-            <div id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
-                <!-- الرسائل ستظهر هنا -->
-                <div class="flex flex-col items-center justify-center h-full text-gray-400 space-y-3 opacity-70">
-                    <i class="fa-solid fa-wand-magic-sparkles text-4xl"></i>
-                    <p>كيف يمكنني مساعدتك اليوم؟</p>
-                </div>
-            </div>
-
-            <!-- مؤشر جاري الكتابة (مخفي افتراضياً) -->
-            <div id="loading-indicator" class="hidden absolute bottom-24 right-8 bg-white px-4 py-2 rounded-2xl shadow-md border border-gray-100 flex items-center gap-2 text-sm text-gray-500">
-                الذكاء الاصطناعي يكتب <div class="typing-indicator"><span></span><span></span><span></span></div>
-            </div>
-
-            <!-- منطقة الإدخال -->
-            <div class="p-4 bg-white border-t border-gray-200">
-                <div class="max-w-4xl mx-auto">
-                    <!-- معاينة الملف المرفوع -->
-                    <div id="attachment-preview" class="hidden mb-2 inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg text-sm border border-blue-200">
-                        <i class="fa-solid fa-paperclip"></i>
-                        <span id="attachment-name" class="truncate max-w-[200px]"></span>
-                        <button onclick="removeAttachment()" class="text-red-500 hover:text-red-700 ml-2"><i class="fa-solid fa-times"></i></button>
-                    </div>
-
-                    <div class="flex items-end gap-2 bg-gray-100 p-2 rounded-xl border border-gray-300 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition shadow-inner">
-                        
-                        <!-- زر رفع الملفات -->
-                        <input type="file" id="file-upload" class="hidden" onchange="handleFileUpload(event)">
-                        <button onclick="document.getElementById('file-upload').click()" id="upload-btn" class="p-3 text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded-lg transition" title="إرفاق ملف">
-                            <i class="fa-solid fa-paperclip text-lg"></i>
-                        </button>
-
-                        <textarea id="msg-input" rows="1" placeholder="اكتب رسالتك أو وصف الصورة هنا..." class="flex-1 bg-transparent border-none focus:ring-0 resize-none py-3 px-2 text-gray-800 max-h-32 min-h-[48px]" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'" onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendMessage(); }"></textarea>
-                        
-                        <button onclick="sendMessage()" class="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition shadow-md flex items-center justify-center w-12 h-12">
-                            <i class="fa-solid fa-paper-plane"></i>
-                        </button>
-                    </div>
-                    <p class="text-xs text-center text-gray-400 mt-2">Smart AI يمكن أن يخطئ. يرجى التحقق من المعلومات المهمة.</p>
-                </div>
-            </div>
-        </div>
+      <div id="input-area">
+        <input type="text" id="message-input" placeholder="اكتب رسالتك أو وصف الصورة هنا..." />
+        <button class="btn-icon" id="send-btn" title="إرسال"><i class="fas fa-paper-plane"></i></button>
+      </div>
     </div>
+  </div>
 
-    <script>
-        let currentConvId = null;
-        let currentAttachment = null;
-
-        // --- التوثيق ---
-        async function checkAuth() {
-            try {
-                const res = await fetch('/api/auth/me');
-                if (res.ok) {
-                    const data = await res.json();
-                    document.getElementById('auth-section').classList.add('hidden');
-                    document.getElementById('app-section').classList.remove('hidden');
-                    document.getElementById('user-email-display').innerText = data.user.email;
-                    loadConversations();
-                }
-            } catch (e) {}
-        }
-
-        async function login() {
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            showAuthMsg('');
-            const res = await fetch('/api/auth/login', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password })
-            });
-            if (res.ok) checkAuth();
-            else showAuthMsg("البريد الإلكتروني أو كلمة المرور غير صحيحة");
-        }
-
-        async function signup() {
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            showAuthMsg('');
-            const res = await fetch('/api/auth/signup', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password })
-            });
-            if (res.ok) checkAuth();
-            else showAuthMsg("فشل إنشاء الحساب، تأكد أن كلمة المرور 8 أحرف على الأقل.");
-        }
-
-        function showAuthMsg(msg) {
-            document.getElementById('auth-msg').innerText = msg;
-        }
-
-        async function logout() {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            location.reload();
-        }
-
-        // --- إدارة المحادثات ---
-        async function loadConversations() {
-            const res = await fetch('/api/conversations');
-            const data = await res.json();
-            const list = document.getElementById('conversations-list');
-            list.innerHTML = '';
-            
-            if (data.conversations.length === 0) {
-                startNewConversation();
-                return;
-            }
-
-            data.conversations.forEach(conv => {
-                const isActive = conv.id === currentConvId;
-                const bgClass = isActive ? 'bg-gray-700 border-l-4 border-blue-500' : 'hover:bg-gray-800 border-l-4 border-transparent';
-                
-                const div = document.createElement('div');
-                div.className = `p-3 rounded-lg cursor-pointer flex justify-between items-center group transition ${bgClass}`;
-                div.onclick = () => selectConversation(conv.id, conv.title);
-                
-                div.innerHTML = `
-                    <div class="flex items-center gap-3 overflow-hidden flex-1">
-                        <i class="fa-regular fa-message text-gray-400"></i>
-                        <span class="truncate text-sm text-gray-200">${escapeHTML(conv.title)}</span>
-                    </div>
-                    <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                        <button onclick="editChatName('${conv.id}', '${escapeHTML(conv.title)}', event)" class="text-gray-400 hover:text-blue-400"><i class="fa-solid fa-pen text-xs"></i></button>
-                        <button onclick="deleteChat('${conv.id}', event)" class="text-gray-400 hover:text-red-400"><i class="fa-solid fa-trash text-xs"></i></button>
-                    </div>
-                `;
-                list.appendChild(div);
-            });
-
-            if (!currentConvId && data.conversations.length > 0) {
-                selectConversation(data.conversations[0].id, data.conversations[0].title);
-            }
-        }
-
-        async function startNewConversation() {
-            const res = await fetch('/api/conversations', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'محادثة جديدة' })
-            });
-            const data = await res.json();
-            if (data.conversation) {
-                await loadConversations();
-                selectConversation(data.conversation.id, data.conversation.title);
-            }
-        }
-
-        async function selectConversation(id, title) {
-            currentConvId = id;
-            document.getElementById('current-chat-title').innerText = title;
-            document.getElementById('chat-box').innerHTML = ''; // تنظيف الشاشة
-            loadConversations(); // لتحديث التحديد في الشريط الجانبي
-            
-            const res = await fetch(`/api/conversations/${id}/messages`);
-            const data = await res.json();
-            
-            if (data.messages && data.messages.length > 0) {
-                data.messages.forEach(msg => {
-                    // إذا كانت الرسالة من البوت وتحتوي على رابط صورة (لتوليد الصور إن أردت دعمه مستقبلاً)
-                    addMessageToUI(msg.role === 'user' ? 'user' : 'bot', msg.content, msg.attachment);
-                });
-            } else {
-                document.getElementById('chat-box').innerHTML = `
-                    <div class="flex flex-col items-center justify-center h-full text-gray-400 space-y-3 opacity-70">
-                        <i class="fa-solid fa-wand-magic-sparkles text-4xl"></i>
-                        <p>ابدأ المحادثة الآن...</p>
-                    </div>`;
-            }
-        }
-
-        async function editChatName(id, oldName, event) {
-            event.stopPropagation();
-            const newName = prompt("أدخل الاسم الجديد للمحادثة:", oldName);
-            if (newName && newName.trim() !== "") {
-                await fetch(`/api/conversations/${id}`, {
-                    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: newName })
-                });
-                loadConversations();
-                if(id === currentConvId) document.getElementById('current-chat-title').innerText = newName;
-            }
-        }
-
-        async function deleteChat(id, event) {
-            event.stopPropagation();
-            if (confirm("هل أنت متأكد من حذف هذه المحادثة؟")) {
-                await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
-                if (currentConvId === id) currentConvId = null;
-                loadConversations();
-            }
-        }
-
-        // --- رفع الملفات ---
-        async function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const icon = document.querySelector('#upload-btn i');
-            icon.className = 'fa-solid fa-spinner fa-spin text-blue-500';
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                const res = await fetch('/api/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                
-                if (data.success) {
-                    currentAttachment = data.file;
-                    document.getElementById('attachment-preview').classList.remove('hidden');
-                    document.getElementById('attachment-name').innerText = file.name;
-                } else {
-                    alert('فشل رفع الملف: ' + data.error);
-                }
-            } catch (err) {
-                alert('حدث خطأ أثناء الرفع.');
-            } finally {
-                icon.className = 'fa-solid fa-paperclip text-lg';
-                event.target.value = ''; // تصفير الإدخال
-            }
-        }
-
-        function removeAttachment() {
-            currentAttachment = null;
-            document.getElementById('attachment-preview').classList.add('hidden');
-        }
-
-        // --- إرسال واستقبال الرسائل ---
-        async function sendMessage() {
-            const input = document.getElementById('msg-input');
-            const text = input.value.trim();
-            const isImageMode = document.getElementById('image-mode-toggle').checked;
-
-            if ((!text && !currentAttachment) || !currentConvId) return;
-
-            // مسح مربع النص والمرفق
-            input.value = '';
-            input.style.height = 'auto';
-            const attachmentToSend = currentAttachment;
-            removeAttachment();
-
-            // إزالة شاشة الترحيب إذا كانت موجودة
-            const emptyState = document.querySelector('#chat-box .fa-wand-magic-sparkles');
-            if(emptyState) emptyState.parentElement.remove();
-
-            // إضافة رسالة المستخدم للواجهة
-            addMessageToUI('user', text, attachmentToSend);
-            document.getElementById('loading-indicator').classList.remove('hidden');
-
-            try {
-                if (isImageMode && text) {
-                    // وضع توليد الصور
-                    const res = await fetch('/api/generate-image', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt: text })
-                    });
-                    const data = await res.json();
-                    
-                    if (data.success) {
-                        const imgBase64 = `data:${data.image.mimeType};base64,${data.image.data}`;
-                        addMessageToUI('bot', `<img src="${imgBase64}" class="w-full max-w-sm rounded-lg shadow-md mt-2"> <br> ${data.text || ''}`);
-                    } else {
-                        addMessageToUI('bot', '⚠️ فشل في توليد الصورة: ' + (data.error || ''));
-                    }
-                } else {
-                    // وضع المحادثة النصية العادية
-                    const res = await fetch(`/api/conversations/${currentConvId}/messages`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ content: text, attachment: attachmentToSend })
-                    });
-                    const data = await res.json();
-                    if (data.aiMessage) {
-                        addMessageToUI('bot', data.aiMessage.content);
-                        if (data.conversationTitle) {
-                            loadConversations(); // لتحديث العنوان الجانبي إذا تم إنشاؤه تلقائياً
-                            document.getElementById('current-chat-title').innerText = data.conversationTitle;
-                        }
-                    }
-                }
-            } catch (err) {
-                addMessageToUI('bot', '⚠️ حدث خطأ في الاتصال بالخادم.');
-            } finally {
-                document.getElementById('loading-indicator').classList.add('hidden');
-            }
-        }
-
-        function addMessageToUI(role, content, attachment = null) {
-            const box = document.getElementById('chat-box');
-            const msgDiv = document.createElement('div');
-            
-            // تحويل النص العادي إلى HTML (أسطر جديدة) للرسائل النصية
-            let displayContent = content ? content.replace(/\n/g, '<br>') : '';
-
-            // إذا كان هناك مرفق، نعرضه
-            let attachmentHTML = '';
-            if (attachment) {
-                if(attachment.category === 'image' && attachment.uri) {
-                    // تنويه: الـ URI الخاص بجيميني ليس رابطاً مباشراً للصورة للمتصفح، لذلك نعرض اسم الملف فقط للتبسيط
-                    attachmentHTML = `<div class="bg-black/10 rounded p-2 mb-2 text-sm flex items-center gap-2"><i class="fa-regular fa-image"></i> تم إرفاق صورة: ${attachment.displayName}</div>`;
-                } else {
-                    attachmentHTML = `<div class="bg-black/10 rounded p-2 mb-2 text-sm flex items-center gap-2"><i class="fa-solid fa-file"></i> مرفق: ${attachment.displayName}</div>`;
-                }
-            }
-
-            if (role === 'user') {
-                msgDiv.className = 'flex justify-end w-full mb-4';
-                msgDiv.innerHTML = `
-                    <div class="max-w-[75%] bg-blue-600 text-white p-4 rounded-2xl rounded-tr-sm shadow-sm leading-relaxed">
-                        ${attachmentHTML}
-                        ${displayContent}
-                    </div>
-                    <div class="w-8 h-8 rounded-full bg-gray-300 ml-3 flex-shrink-0 flex items-center justify-center shadow"><i class="fa-solid fa-user text-gray-600 text-sm"></i></div>
-                `;
-            } else {
-                msgDiv.className = 'flex justify-start w-full mb-4';
-                // إذا كان المحتوى يحتوي أصلاً على <img> (من توليد الصور)، لا نطبق عليه الـ escape
-                msgDiv.innerHTML = `
-                    <div class="w-8 h-8 rounded-full bg-blue-100 mr-3 flex-shrink-0 flex items-center justify-center shadow border border-blue-200"><i class="fa-solid fa-robot text-blue-600 text-sm"></i></div>
-                    <div class="max-w-[75%] bg-white border border-gray-200 text-gray-800 p-4 rounded-2xl rounded-tl-sm shadow-sm leading-relaxed">
-                        ${displayContent}
-                    </div>
-                `;
-            }
-            
-            box.appendChild(msgDiv);
-            box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
-        }
-
-        function escapeHTML(str) {
-            if (!str) return '';
-            return str.replace(/[&<>'"]/g, 
-                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
-            );
-        }
-
-        // التهيئة عند البدء
-        checkAuth();
-    </script>
+  <script src="/app.js"></script>
 </body>
 </html>
