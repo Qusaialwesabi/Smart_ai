@@ -169,6 +169,7 @@ function renderMessage(content, role) {
 async function sendMessage() {
   const text = messageInput.value.trim();
   if (!text || !currentConvId) return;
+  
   messageInput.value = '';
   renderMessage(text, 'user');
 
@@ -186,7 +187,7 @@ async function sendMessage() {
       renderMessage('⚠️ حدث خطأ: ' + (data.error || 'تعذر الاتصال بالنموذج.'), 'assistant');
     }
   } catch (err) {
-    renderMessage('⚠️ خطأ في الشبكة أو أن الخادم لا يستجيب.', 'assistant');
+    renderMessage('⚠️ حدث خطأ في الاتصال بالسيرفر.', 'assistant');
   }
 }
 
