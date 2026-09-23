@@ -11,31 +11,56 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// إخبار السيرفر بوجود ملفات الواجهة داخل مجلد public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// إعداد الاتصال بـ Supabase مع تعطيل الـ Realtime والـ Session المستمرة لتجنب أخطاء الـ WebSocket
+// إعداد Supabase
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
 let supabase;
 if (supabaseUrl && supabaseKey) {
   supabase = createClient(supabaseUrl, supabaseKey, {
-    realtime: {
-      params: {
-        eventsPerSecond: 0,
-      },
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    }
+    realtime: { params: { eventsPerSecond: 0 } },
+    auth: { persistSession: false, autoRefreshToken: false }
   });
 }
 
-// إعداد الاتصال بـ Gemini
-let genAI;
-if (process.env.GEMINI_API_KEY) {
-  genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// ----------------------------------------------------
+// نظام إدارة مفاتيح Gemini اللامحدودة (Pool of Keys)
+// ----------------------------------------------------
+// جلب المفاتيح من ملف البيئة .env (يمكنك إضافة مفاتيح فاصلة بفاصلة أو إضافة متغيرات جديدة)
+const geminiKeysString = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
+// تحويلها إلى مصفوفة وإزالة المسافات الفارغة
+const geminiKeys = geminiKeysString.split(',').map(key => key.trim()).filter(Boolean);
+
+console.log(`تم تحميل ${geminiKeys.length} مفتاح لـ Gemini بنجاح.`);
+
+// دالة ذكية لتوليد المحتوى مع التبديل التلقائي للمفاتيح عند حدوث أي خطأ
+async function generateWithRotatingKeys(prompt) {
+  if (geminiKeys.length === 0) {
+    throw new Error('لا توجد مفاتيح Gemini مضافة في السيرفر');
+  }
+
+  let lastError = null;
+
+  // التجربة عبر المفاتيح الواحد تلو الآخر
+  for (let i = 0; i < geminiKeys.length; i++) {
+    const currentKey = geminiKeys[i];
+    try {
+      const genAI = new GoogleGenerativeAI(currentKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      return response.text(); // نجحت العملية، نرجع النص فوراً
+    } catch (error) {
+      console.warn(`المفتاح رقم ${i + 1} فشل أو انتهى، جاري التجربة في المفتاح التالي... الخطأ:`, error.message);
+      lastError = error;
+      // الانتقال للمفتاح التالي في اللفة القادمة للـ loop
+    }
+  }
+
+  // لو خلصت كل المفاتيح و فشلت كلها
+  throw new Error('فشلت كل المفاتيح المتاحة: ' + (lastError ? lastError.message : 'خطأ غير معروف'));
 }
 
 // ----------------------------------------------------
@@ -46,14 +71,13 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// مسار إنشاء حساب
 app.post('/api/register', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!supabase) return res.status(500).json({ success: false, error: 'قاعدة البيانات غير متصلة' });
 
     const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) return res.status(400).json({ success: false, error: error.message || 'خطأ في البيانات أو الحساب موجود مسبقاً' });
+    if (error) return res.status(400).json({ success: false, error: error.message || 'خطأ في البيانات' });
     
     res.json({ success: true, data });
   } catch (error) {
@@ -61,7 +85,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// مسار تسجيل الدخول
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -76,22 +99,19 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// مسار الدردشة مع الذكاء الاصطناعي (باستخدام gemini-3.5-flash-lite)
+// مسار الدردشة مع نظام تبديل المفاتيح التلقائي
 app.post('/api/chat', async (req, res) => {
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'الرجاء إرسال النص' });
-    if (!genAI) return res.status(500).json({ error: 'مفتاح Gemini غير محدد' });
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    // استدعاء الدالة الذكية للتبديل بين المفاتيح
+    const text = await generateWithRotatingKeys(prompt);
 
     res.json({ success: true, text: text });
   } catch (error) {
-    console.error("Gemini Error:", error);
-    res.status(500).json({ success: false, error: 'خطأ: ' + error.message });
+    console.error("Gemini Rotation Error:", error);
+    res.status(500).json({ success: false, error: 'خطأ من الذكاء الاصطناعي: ' + error.message });
   }
 });
 
@@ -102,10 +122,8 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
 
-  // رابط موقعك الأساسي على Render
   const RENDER_URL = process.env.RENDER_EXTERNAL_URL || 'https://qusai-alwesabi.onrender.com';
 
-  // إرسال طلب لنفسه كل 10 ثوانٍ (10000 ميللي ثانية) لمنع السكون نهائياً
   setInterval(async () => {
     try {
       await fetch(RENDER_URL);
