@@ -1,13 +1,13 @@
 {
-  "name": "gemini-api-server",
+  "name": "gemini-supabase-app",
   "version": "1.0.0",
-  "description": "Fast Server with Gemini API Key Rotation, Supabase & Keep-Alive",
+  "description": "AI Chat app with Supabase and Gemini rotation",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@google/genai": "latest",
+    "@google/genai": "^0.1.1",
     "@supabase/supabase-js": "^2.48.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
