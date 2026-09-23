@@ -18,6 +18,14 @@ const logoutBtn = document.getElementById('logout-btn');
 const toggleSidebar = document.getElementById('toggle-sidebar');
 const sidebar = document.getElementById('sidebar');
 
+function getAuthHeaders() {
+  const token = localStorage.getItem('supabase_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+}
+
 authToggleBtn.addEventListener('click', () => {
   isSignUp = !isSignUp;
   authTitle.textContent = isSignUp ? 'حساب جديد' : 'تسجيل الدخول';
@@ -25,16 +33,23 @@ authToggleBtn.addEventListener('click', () => {
 });
 
 async function checkAuth() {
+  const token = localStorage.getItem('supabase_token');
+  if (!token) {
+    showAuth();
+    return;
+  }
+
   try {
-    const res = await fetch('/api/auth/me');
-    if (res.status === 200) {
+    const res = await fetch('/api/auth/me', { headers: getAuthHeaders() });
+    if (res.ok) {
       showApp();
       loadConversations();
-    } else { 
-      showAuth(); 
+    } else {
+      localStorage.removeItem('supabase_token');
+      showAuth();
     }
-  } catch { 
-    showAuth(); 
+  } catch {
+    showAuth();
   }
 }
 
@@ -47,7 +62,7 @@ authSubmitBtn.addEventListener('click', async () => {
   if (!email || !password) return alert('يرجى ملء جميع الحقول');
 
   const endpoint = isSignUp ? '/api/auth/signup' : '/api/auth/login';
-  
+
   try {
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -57,19 +72,25 @@ authSubmitBtn.addEventListener('click', async () => {
 
     const data = await res.json();
 
-    if (res.ok && !data.error) {
+    if (res.ok && data.session?.access_token) {
+      localStorage.setItem('supabase_token', data.session.access_token);
       showApp();
       loadConversations();
-    } else { 
-      alert(data.error || 'خطأ في بيانات الدخول، تأكد من الإيميل وكلمة السر'); 
+    } else if (res.ok && isSignUp) {
+      alert('تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول.');
+      isSignUp = false;
+      authTitle.textContent = 'تسجيل الدخول';
+      authSubmitBtn.textContent = 'دخول';
+    } else {
+      alert('خطأ: ' + (data.error || 'يرجى التأكد من البيانات المُدخلة.'));
     }
-  } catch (err) { 
-    alert('حدث خطأ في الاتصال بالسيرفر'); 
+  } catch (err) {
+    alert('حدث خطأ في الاتصال بالسيرفر');
   }
 });
 
-logoutBtn.addEventListener('click', async () => {
-  await fetch('/api/auth/logout', { method: 'POST' });
+logoutBtn.addEventListener('click', () => {
+  localStorage.removeItem('supabase_token');
   showAuth();
 });
 
@@ -77,10 +98,10 @@ toggleSidebar.addEventListener('click', () => sidebar.classList.toggle('open'));
 
 async function loadConversations() {
   try {
-    const res = await fetch('/api/conversations');
+    const res = await fetch('/api/conversations', { headers: getAuthHeaders() });
     const data = await res.json();
     conversationsList.innerHTML = '';
-    
+
     if (data.conversations && data.conversations.length > 0) {
       data.conversations.forEach(c => renderConvItem(c));
       if (!currentConvId || !data.conversations.find(c => c.id === currentConvId)) {
@@ -95,7 +116,7 @@ async function loadConversations() {
 function renderConvItem(c) {
   const div = document.createElement('div');
   div.className = `conv-item ${c.id === currentConvId ? 'active' : ''}`;
-  
+
   div.innerHTML = `
     <div class="conv-title" onclick="selectConv('${c.id}')" title="${c.title || 'محادثة'}">
       <i class="far fa-comments"></i> ${c.title || 'محادثة'}
@@ -111,7 +132,7 @@ function renderConvItem(c) {
 async function createNewConv() {
   const res = await fetch('/api/conversations', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ title: 'محادثة جديدة' })
   });
   const data = await res.json();
@@ -135,10 +156,10 @@ async function editConv(event, id, oldTitle) {
   event.stopPropagation();
   const newTitle = prompt("أدخل الاسم الجديد للمحادثة:", oldTitle);
   if (!newTitle || newTitle === oldTitle) return;
-  
+
   const res = await fetch(`/api/conversations/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ title: newTitle })
   });
   if (res.ok) loadConversations();
@@ -148,8 +169,11 @@ async function deleteConv(event, id) {
   event.stopPropagation();
   const confirmDelete = confirm("هل أنت متأكد أنك تريد حذف هذه المحادثة بشكل نهائي؟");
   if (!confirmDelete) return;
-  
-  const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+
+  const res = await fetch(`/api/conversations/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
   if (res.ok) {
     if (currentConvId === id) {
       currentConvId = null;
@@ -161,7 +185,7 @@ async function deleteConv(event, id) {
 
 async function loadMessages(id) {
   messagesContainer.innerHTML = '';
-  const res = await fetch(`/api/conversations/${id}/messages`);
+  const res = await fetch(`/api/conversations/${id}/messages`, { headers: getAuthHeaders() });
   const data = await res.json();
   (data.messages || []).forEach(m => renderMessage(m.content, m.role));
 }
@@ -186,18 +210,18 @@ function renderMessage(content, role) {
 async function sendMessage() {
   const text = messageInput.value.trim();
   if (!text || !currentConvId) return;
-  
+
   messageInput.value = '';
   renderMessage(text, 'user');
 
   try {
     const res = await fetch(`/api/conversations/${currentConvId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ content: text }),
     });
     const data = await res.json();
-    
+
     if (res.ok && data.aiMessage) {
       renderMessage(data.aiMessage.content, 'assistant');
     } else {
