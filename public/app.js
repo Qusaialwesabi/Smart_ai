@@ -1,5 +1,6 @@
 let currentConvId = null;
 let isSignUp = false;
+let isSending = false;
 
 const authScreen = document.getElementById('auth-screen');
 const appContainer = document.getElementById('app-container');
@@ -18,40 +19,49 @@ const logoutBtn = document.getElementById('logout-btn');
 const toggleSidebar = document.getElementById('toggle-sidebar');
 const sidebar = document.getElementById('sidebar');
 
+// ========== HELPERS ==========
+function getToken() { return localStorage.getItem('supabase_token'); }
 function getAuthHeaders() {
-  const token = localStorage.getItem('supabase_token');
+  const token = getToken();
   return {
     'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   };
 }
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text || '';
+  return d.innerHTML;
+}
 
+// ========== AUTH ==========
 authToggleBtn.addEventListener('click', () => {
   isSignUp = !isSignUp;
   authTitle.textContent = isSignUp ? 'حساب جديد' : 'تسجيل الدخول';
   authSubmitBtn.textContent = isSignUp ? 'إنشاء حساب' : 'دخول';
 });
 
-async function checkAuth() {
-  const token = localStorage.getItem('supabase_token');
-  if (!token) return showAuth();
+function showAuth() {
+  authScreen.style.display = 'flex';
+  appContainer.style.display = 'none';
+}
+function showApp() {
+  authScreen.style.display = 'none';
+  appContainer.style.display = 'flex';
+}
 
+async function checkAuth() {
+  const token = getToken();
+  if (!token) return showAuth();
   try {
     const res = await fetch('/api/auth/me', { headers: getAuthHeaders() });
-    if (res.ok) {
-      showApp();
-      loadConversations();
-    } else {
+    if (res.ok) { showApp(); loadConversations(); }
+    else {
       localStorage.removeItem('supabase_token');
       showAuth();
     }
-  } catch {
-    showAuth();
-  }
+  } catch { showAuth(); }
 }
-
-function showAuth() { authScreen.style.display = 'flex'; appContainer.style.display = 'none'; }
-function showApp() { authScreen.style.display = 'none'; appContainer.style.display = 'flex'; }
 
 authSubmitBtn.addEventListener('click', async () => {
   const email = authEmail.value.trim();
@@ -59,6 +69,9 @@ authSubmitBtn.addEventListener('click', async () => {
   if (!email || !password) return alert('يرجى ملء جميع الحقول');
 
   const endpoint = isSignUp ? '/api/auth/signup' : '/api/auth/login';
+  authSubmitBtn.disabled = true;
+  const orig = authSubmitBtn.textContent;
+  authSubmitBtn.textContent = '...';
 
   try {
     const res = await fetch(endpoint, {
@@ -73,32 +86,37 @@ authSubmitBtn.addEventListener('click', async () => {
       showApp();
       loadConversations();
     } else if (res.ok && isSignUp) {
-      alert('تم إنشاء الحساب بنجاح! قم بتسجيل الدخول الآن.');
+      alert('تم إنشاء الحساب! قم بتسجيل الدخول الآن.');
       isSignUp = false;
       authTitle.textContent = 'تسجيل الدخول';
       authSubmitBtn.textContent = 'دخول';
     } else {
-      alert('خطأ: ' + (data.error || 'يرجى التأكد من البيانات.'));
+      alert('خطأ: ' + (data.error || 'تأكد من البيانات.'));
     }
   } catch {
-    alert('حدث خطأ في الاتصال بالسيرفر');
+    alert('خطأ في الاتصال بالسيرفر.');
+  } finally {
+    authSubmitBtn.disabled = false;
+    authSubmitBtn.textContent = orig;
   }
 });
 
 logoutBtn.addEventListener('click', () => {
   localStorage.removeItem('supabase_token');
+  currentConvId = null;
   showAuth();
 });
 
 toggleSidebar.addEventListener('click', () => sidebar.classList.toggle('open'));
 
+// ========== CONVERSATIONS ==========
 async function loadConversations() {
   try {
     const res = await fetch('/api/conversations', { headers: getAuthHeaders() });
     const data = await res.json();
     conversationsList.innerHTML = '';
 
-    if (data.conversations && data.conversations.length > 0) {
+    if (data.conversations?.length > 0) {
       data.conversations.forEach(c => renderConvItem(c));
       if (!currentConvId || !data.conversations.find(c => c.id === currentConvId)) {
         selectConv(data.conversations[0].id);
@@ -113,12 +131,21 @@ function renderConvItem(c) {
   const div = document.createElement('div');
   div.className = `conv-item ${c.id === currentConvId ? 'active' : ''}`;
   div.innerHTML = `
-    <div class="conv-title" onclick="selectConv('${c.id}')"><i class="far fa-comments"></i> ${c.title}</div>
+    <div class="conv-title" data-id="${c.id}"><i class="far fa-comments"></i> ${escapeHtml(c.title)}</div>
     <div class="conv-actions">
-      <i class="fas fa-pen edit-btn" onclick="editConv(event, '${c.id}', '${c.title}')"></i>
-      <i class="fas fa-trash del-btn" onclick="deleteConv(event, '${c.id}')"></i>
+      <i class="fas fa-pen edit-btn" data-id="${c.id}" data-title="${escapeHtml(c.title)}"></i>
+      <i class="fas fa-trash del-btn" data-id="${c.id}"></i>
     </div>
   `;
+  div.querySelector('.conv-title').addEventListener('click', () => selectConv(c.id));
+  div.querySelector('.edit-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    editConv(c.id, c.title);
+  });
+  div.querySelector('.del-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteConv(c.id);
+  });
   conversationsList.appendChild(div);
 }
 
@@ -126,7 +153,7 @@ async function createNewConv() {
   const res = await fetch('/api/conversations', {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ title: 'محادثة جديدة' })
+    body: JSON.stringify({ title: 'محادثة جديدة' }),
   });
   const data = await res.json();
   if (data.conversation) {
@@ -145,50 +172,85 @@ async function selectConv(id) {
   sidebar.classList.remove('open');
 }
 
-async function editConv(event, id, oldTitle) {
-  event.stopPropagation();
-  const newTitle = prompt("الاسم الجديد:", oldTitle);
-  if (!newTitle || newTitle === oldTitle) return;
-  const res = await fetch(`/api/conversations/${id}`, { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify({ title: newTitle }) });
+async function editConv(id, oldTitle) {
+  const newTitle = prompt('الاسم الجديد:', oldTitle);
+  if (!newTitle?.trim() || newTitle === oldTitle) return;
+  const res = await fetch(`/api/conversations/${id}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ title: newTitle.trim() }),
+  });
   if (res.ok) loadConversations();
 }
 
-async function deleteConv(event, id) {
-  event.stopPropagation();
-  if (!confirm("هل أنت متأكد من الحذف؟")) return;
-  const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+async function deleteConv(id) {
+  if (!confirm('هل أنت متأكد من الحذف؟')) return;
+  const res = await fetch(`/api/conversations/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
   if (res.ok) {
-    if (currentConvId === id) { currentConvId = null; messagesContainer.innerHTML = ''; }
+    if (currentConvId === id) {
+      currentConvId = null;
+      messagesContainer.innerHTML = '';
+    }
     loadConversations();
   }
 }
 
+// ========== MESSAGES ==========
 async function loadMessages(id) {
   messagesContainer.innerHTML = '';
-  const res = await fetch(`/api/conversations/${id}/messages`, { headers: getAuthHeaders() });
-  const data = await res.json();
-  (data.messages || []).forEach(m => renderMessage(m.content, m.role));
+  try {
+    const res = await fetch(`/api/conversations/${id}/messages`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    (data.messages || []).forEach(m => renderMessage(m.content, m.role));
+  } catch (e) { console.error(e); }
 }
 
 function renderMessage(content, role) {
   const msgDiv = document.createElement('div');
   msgDiv.className = `message ${role}`;
+
   if (role === 'assistant') {
-    msgDiv.innerHTML = typeof marked !== 'undefined' ? marked.parse(content || '') : content;
+    if (typeof marked !== 'undefined') {
+      msgDiv.innerHTML = marked.parse(content || '');
+    } else {
+      msgDiv.textContent = content || '';
+    }
   } else {
-    msgDiv.textContent = content;
+    msgDiv.textContent = content || '';
   }
+
   messagesContainer.appendChild(msgDiv);
-  if (typeof hljs !== 'undefined') msgDiv.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+
+  if (typeof hljs !== 'undefined') {
+    msgDiv.querySelectorAll('pre code').forEach(b => {
+      try { hljs.highlightElement(b); } catch (e) {}
+    });
+  }
+
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  return msgDiv;
 }
 
+// ========== SEND ==========
 async function sendMessage() {
   const text = messageInput.value.trim();
-  if (!text || !currentConvId) return;
+  if (!text || !currentConvId || isSending) return;
 
+  isSending = true;
+  sendBtn.disabled = true;
   messageInput.value = '';
+
   renderMessage(text, 'user');
+
+  // Typing indicator
+  const typingDiv = document.createElement('div');
+  typingDiv.className = 'message assistant';
+  typingDiv.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+  messagesContainer.appendChild(typingDiv);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
   try {
     const res = await fetch(`/api/conversations/${currentConvId}/messages`, {
@@ -197,14 +259,31 @@ async function sendMessage() {
       body: JSON.stringify({ content: text }),
     });
     const data = await res.json();
-    if (res.ok && data.aiMessage) renderMessage(data.aiMessage.content, 'assistant');
-    else renderMessage('⚠️ حدث خطأ: ' + (data.error || 'تعذر الاتصال بالنموذج.'), 'assistant');
+    typingDiv.remove();
+
+    if (res.ok && data.aiMessage) {
+      renderMessage(data.aiMessage.content, 'assistant');
+      loadConversations(); // refresh titles
+    } else {
+      renderMessage('⚠️ ' + (data.error || 'تعذر الاتصال بالنموذج.'), 'assistant');
+    }
   } catch (err) {
+    typingDiv.remove();
     renderMessage('⚠️ خطأ في الاتصال بالسيرفر.', 'assistant');
+  } finally {
+    isSending = false;
+    sendBtn.disabled = false;
+    messageInput.focus();
   }
 }
 
 sendBtn.addEventListener('click', sendMessage);
-messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+messageInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    sendMessage();
+  }
+});
 
+// ========== INIT ==========
 checkAuth();
