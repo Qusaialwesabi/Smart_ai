@@ -14,12 +14,22 @@ app.use(express.json());
 // إخبار السيرفر بوجود ملفات الواجهة داخل مجلد public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// إعداد الاتصال بـ Supabase
+// إعداد الاتصال بـ Supabase مع تعطيل الـ Realtime والـ Session المستمرة لتجنب أخطاء الـ WebSocket
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
 let supabase;
 if (supabaseUrl && supabaseKey) {
-  supabase = createClient(supabaseUrl, supabaseKey);
+  supabase = createClient(supabaseUrl, supabaseKey, {
+    realtime: {
+      params: {
+        eventsPerSecond: 0,
+      },
+    },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    }
+  });
 }
 
 // إعداد الاتصال بـ Gemini
@@ -43,7 +53,7 @@ app.post('/api/register', async (req, res) => {
     if (!supabase) return res.status(500).json({ success: false, error: 'قاعدة البيانات غير متصلة' });
 
     const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) return res.status(400).json({ success: false, error: 'خطأ في البيانات أو الحساب موجود مسبقاً' });
+    if (error) return res.status(400).json({ success: false, error: error.message || 'خطأ في البيانات أو الحساب موجود مسبقاً' });
     
     res.json({ success: true, data });
   } catch (error) {
@@ -58,7 +68,7 @@ app.post('/api/login', async (req, res) => {
     if (!supabase) return res.status(500).json({ success: false, error: 'قاعدة البيانات غير متصلة' });
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return res.status(400).json({ success: false, error: 'البريد أو كلمة المرور غير صحيحة' });
+    if (error) return res.status(400).json({ success: false, error: error.message || 'البريد أو كلمة المرور غير صحيحة' });
     
     res.json({ success: true, data });
   } catch (error) {
@@ -80,6 +90,7 @@ app.post('/api/chat', async (req, res) => {
 
     res.json({ success: true, text: text });
   } catch (error) {
+    console.error("Gemini Error:", error);
     res.status(500).json({ success: false, error: 'خطأ في معالجة الذكاء الاصطناعي' });
   }
 });
