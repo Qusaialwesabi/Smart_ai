@@ -76,14 +76,14 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// مسار الدردشة مع الذكاء الاصطناعي
+// مسار الدردشة مع الذكاء الاصطناعي (باستخدام gemini-3.5-flash-lite)
 app.post('/api/chat', async (req, res) => {
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'الرجاء إرسال النص' });
     if (!genAI) return res.status(500).json({ error: 'مفتاح Gemini غير محدد' });
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
@@ -91,12 +91,12 @@ app.post('/api/chat', async (req, res) => {
     res.json({ success: true, text: text });
   } catch (error) {
     console.error("Gemini Error:", error);
-    res.status(500).json({ success: false, error: 'خطأ في معالجة الذكاء الاصطناعي' });
+    res.status(500).json({ success: false, error: 'خطأ: ' + error.message });
   }
 });
 
 // ----------------------------------------------------
-// تشغيل الخادم بشكل طبيعي لـ Railway
+// تشغيل الخادم
 // ----------------------------------------------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
