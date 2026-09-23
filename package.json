@@ -1,13 +1,13 @@
 {
-  "name": "gemini-supabase-app",
+  "name": "smart-ai-app",
   "version": "1.0.0",
-  "description": "AI Chat app with Supabase and Gemini rotation",
+  "description": "Smart AI Chat app with Supabase and Gemini API key rotation",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@google/genai": "^0.1.1",
+    "@google/generative-ai": "^0.21.0",
     "@supabase/supabase-js": "^2.48.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
