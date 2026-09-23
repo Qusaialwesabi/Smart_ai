@@ -1,7 +1,7 @@
 {
   "name": "smart-ai-app",
-  "version": "1.0.0",
-  "description": "Smart AI Chat app with Supabase and Gemini",
+  "version": "2.0.0",
+  "description": "Smart AI Chat with Supabase and Gemini",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
