@@ -3,143 +3,342 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart AI - تطبيق الذكاء الاصطناعي</title>
+    <title>Smart AI - الواجهة الاحترافية</title>
     <style>
-        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .container { background-color: #1e293b; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        h2 { text-align: center; margin-bottom: 20px; color: #38bdf8; }
-        input[type="email"], input[type="password"], input[type="text"] { width: 100%; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #334155; background-color: #0f172a; color: white; outline: none; }
-        button { width: 100%; padding: 12px; background-color: #0284c7; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; margin-top: 10px; transition: 0.3s; }
-        button:hover { background-color: #0369a1; }
-        .switch-form { text-align: center; margin-top: 15px; color: #94a3b8; cursor: pointer; font-size: 14px; }
-        .switch-form:hover { color: #38bdf8; }
-        #chat-section { display: none; }
-        .chat-box { background-color: #0f172a; height: 300px; border-radius: 6px; overflow-y: auto; padding: 15px; margin-bottom: 15px; border: 1px solid #334155; }
-        .message { margin-bottom: 15px; padding: 10px; border-radius: 6px; max-width: 80%; }
-        .user-msg { background-color: #0284c7; align-self: flex-start; margin-left: auto; }
-        .ai-msg { background-color: #334155; align-self: flex-end; margin-right: auto; }
-        .chat-input-group { display: flex; gap: 10px; }
-        .chat-input-group input { margin: 0; }
-        .chat-input-group button { margin: 0; width: 80px; }
+        :root {
+            --bg-main: #0b0f19;
+            --bg-sidebar: #111827;
+            --bg-card: #1f2937;
+            --accent-purple: #7c3aed;
+            --accent-purple-hover: #6d28d9;
+            --accent-blue: #38bdf8;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border-color: #374151;
+        }
+
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; }
+        body { background-color: var(--bg-main); color: var(--text-main); display: flex; height: 100vh; overflow: hidden; }
+
+        /* شاشة المصادقة (تسجيل الدخول / إنشاء حساب) */
+        #auth-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(11, 15, 25, 0.95); display: flex; justify-content: center; align-items: center; z-index: 1000;
+        }
+        .auth-card {
+            background: var(--bg-sidebar); padding: 40px; border-radius: 16px; width: 100%; max-width: 420px;
+            box-shadow: 0 10px 25px rgba(124, 58, 237, 0.2); border: 1px solid var(--border-color);
+        }
+        .auth-card h2 { text-align: center; margin-bottom: 25px; color: var(--accent-blue); font-size: 24px; }
+        .auth-input { width: 100%; padding: 14px; margin: 12px 0; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: white; outline: none; transition: 0.3s; }
+        .auth-input:focus { border-color: var(--accent-purple); box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2); }
+        .auth-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--accent-purple), #4f46e5); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 15px; transition: 0.3s; }
+        .auth-btn:hover { background: linear-gradient(135deg, var(--accent-purple-hover), #4338ca); }
+        .switch-auth { text-align: center; margin-top: 20px; color: var(--text-muted); cursor: pointer; font-size: 14px; }
+        .switch-auth:hover { color: var(--accent-blue); }
+
+        /* التطبيق الرئيسي (الشات الجانبي والدردشة) */
+        #app-container { display: none; width: 100%; height: 100%; display: flex; }
+
+        /* القائمة الجانبية للمحادثات */
+        .sidebar {
+            width: 280px; background-color: var(--bg-sidebar); border-left: 1px solid var(--border-color);
+            display: flex; flex-direction: column; padding: 20px; gap: 15px;
+        }
+        .new-chat-btn {
+            background: linear-gradient(135deg, var(--accent-purple), #4f46e5); color: white; border: none; padding: 12px;
+            border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.3s;
+        }
+        .new-chat-btn:hover { opacity: 0.9; }
+        .chats-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .chat-item {
+            padding: 10px 12px; background: var(--bg-card); border-radius: 6px; cursor: pointer; display: flex;
+            justify-content: space-between; align-items: center; font-size: 14px; border: 1px solid transparent; transition: 0.2s;
+        }
+        .chat-item:hover { border-color: var(--accent-purple); }
+        .chat-item.active { background: #1e293b; border-color: var(--accent-purple); }
+        .chat-title-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+        .chat-actions { display: flex; gap: 5px; opacity: 0; transition: 0.2s; }
+        .chat-item:hover .chat-actions { opacity: 1; }
+        .action-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+        .action-btn:hover { color: var(--accent-blue); }
+        .action-btn.delete:hover { color: #ef4444; }
+
+        /* منطقة الدردشة الرئيسية */
+        .main-chat { flex: 1; display: flex; flex-direction: column; background-color: var(--bg-main); height: 100%; }
+        .chat-header { padding: 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-sidebar); font-size: 18px; font-weight: bold; color: var(--accent-blue); display: flex; justify-content: space-between; align-items: center; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        
+        .message { max-width: 75%; padding: 14px 18px; border-radius: 12px; line-height: 1.6; font-size: 15px; word-wrap: break-word; }
+        .user-message { background: linear-gradient(135deg, var(--accent-purple), #4f46e5); color: white; align-self: flex-start; border-bottom-right-radius: 2px; }
+        .ai-message { background: var(--bg-card); color: var(--text-main); align-self: flex-end; border-bottom-left-radius: 2px; border: 1px solid var(--border-color); }
+
+        /* صندوق إدخال الرسائل */
+        .chat-input-area { padding: 20px; background: var(--bg-sidebar); border-top: 1px solid var(--border-color); display: flex; gap: 12px; }
+        .chat-input { flex: 1; padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: white; outline: none; font-size: 15px; }
+        .chat-input:focus { border-color: var(--accent-purple); }
+        .send-btn { background: var(--accent-purple); color: white; border: none; padding: 0 24px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .send-btn:hover { background: var(--accent-purple-hover); }
+
+        .empty-chat { text-align: center; color: var(--text-muted); margin: auto; font-size: 18px; }
     </style>
 </head>
 <body>
 
-    <!-- قسم تسجيل الدخول وإنشاء الحساب -->
-    <div class="container" id="auth-section">
-        <h2 id="form-title">تسجيل الدخول</h2>
-        <form id="auth-form">
-            <input type="email" id="email" placeholder="البريد الإلكتروني" required>
-            <input type="password" id="password" placeholder="كلمة المرور" required>
-            <button type="submit" id="submit-btn">دخول</button>
-        </form>
-        <div class="switch-form" id="switch-mode">ليس لديك حساب؟ إنشاء حساب جديد</div>
+    <!-- شاشة تسجيل الدخول -->
+    <div id="auth-container">
+        <div class="auth-card">
+            <h2 id="auth-heading">تسجيل الدخول</h2>
+            <form id="auth-form">
+                <input type="email" id="email" class="auth-input" placeholder="البريد الإلكتروني" required>
+                <input type="password" id="password" class="auth-input" placeholder="كلمة المرور" required>
+                <button type="submit" id="auth-submit-btn" class="auth-btn">دخول</button>
+            </form>
+            <div class="switch-auth" id="switch-auth-mode">ليس لديك حساب؟ إنشاء حساب جديد</div>
+        </div>
     </div>
 
-    <!-- قسم الدردشة مع الذكاء الاصطناعي -->
-    <div class="container" id="chat-section">
-        <h2>Smart AI</h2>
-        <div class="chat-box" id="chat-box">
-            <!-- الرسائل ستظهر هنا -->
+    <!-- التطبيق الرئيسي -->
+    <div id="app-container" style="display: none;">
+        <!-- القائمة الجانبية -->
+        <div class="sidebar">
+            <button class="new-chat-btn" id="new-chat-btn">＋ محادثة جديدة</button>
+            <div class="chats-list" id="chats-list">
+                <!-- المحادثات تظهر هنا ديناميكياً -->
+            </div>
         </div>
-        <form class="chat-input-group" id="chat-form">
-            <input type="text" id="chat-input" placeholder="اكتب سؤالك هنا..." required>
-            <button type="submit">إرسال</button>
-        </form>
+
+        <!-- نافذة المحادثة -->
+        <div class="main-chat">
+            <div class="chat-header">
+                <span id="current-chat-title">محادثة جديدة</span>
+                <span style="font-size: 13px; color: var(--text-muted); cursor: pointer;" id="logout-btn">تسجيل الخروج</span>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="empty-chat" id="empty-chat">ابدأ محادثة جديدة مع الذكاء الاصطناعي...</div>
+            </div>
+            <form class="chat-input-area" id="chat-form">
+                <input type="text" id="chat-input" class="chat-input" placeholder="اكتب رسالتك هنا..." autocomplete="off">
+                <button type="submit" class="send-btn">إرسال</button>
+            </form>
+        </div>
     </div>
 
     <script>
-        let isLoginMode = true;
-        
-        const authSection = document.getElementById('auth-section');
-        const chatSection = document.getElementById('chat-section');
-        const authForm = document.getElementById('auth-form');
-        const switchModeBtn = document.getElementById('switch-mode');
-        const formTitle = document.getElementById('form-title');
-        const submitBtn = document.getElementById('submit-btn');
+        let isLogin = true;
+        let chats = JSON.parse(localStorage.getItem('smart_ai_chats')) || [];
+        let currentChatId = null;
 
-        // التبديل بين تسجيل الدخول وإنشاء الحساب
-        switchModeBtn.addEventListener('click', () => {
-            isLoginMode = !isLoginMode;
-            formTitle.textContent = isLoginMode ? 'تسجيل الدخول' : 'إنشاء حساب جديد';
-            submitBtn.textContent = isLoginMode ? 'دخول' : 'تسجيل';
-            switchModeBtn.textContent = isLoginMode ? 'ليس لديك حساب؟ إنشاء حساب جديد' : 'لديك حساب بالفعل؟ تسجيل الدخول';
+        const authContainer = document.getElementById('auth-container');
+        const appContainer = document.getElementById('app-container');
+        const authForm = document.getElementById('auth-form');
+        const authHeading = document.getElementById('auth-heading');
+        const authSubmitBtn = document.getElementById('auth-submit-btn');
+        const switchAuthMode = document.getElementById('switch-auth-mode');
+        
+        const chatsList = document.getElementById('chats-list');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const currentChatTitle = document.getElementById('current-chat-title');
+        const emptyChat = document.getElementById('empty-chat');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+
+        // التبديل بين تسجيل الدخول والتسجيل الجديد
+        switchAuthMode.addEventListener('click', () => {
+            isLogin = !isLogin;
+            authHeading.textContent = isLogin ? 'تسجيل الدخول' : 'إنشاء حساب جديد';
+            authSubmitBtn.textContent = isLogin ? 'دخول' : 'تسجيل';
+            switchAuthMode.textContent = isLogin ? 'ليس لديك حساب؟ إنشاء حساب جديد' : 'لديك حساب بالفعل؟ تسجيل الدخول';
         });
 
-        // التعامل مع فورم الدخول/التسجيل (بدون استخدام localhost)
+        // تنفيذ عملية المصادقة
         authForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            const endpoint = isLoginMode ? '/api/login' : '/api/register';
+            const endpoint = isLogin ? '/api/login' : '/api/register';
 
-            submitBtn.textContent = 'جاري التحميل...';
-            submitBtn.disabled = true;
+            authSubmitBtn.textContent = 'جاري المعالجة...';
+            authSubmitBtn.disabled = true;
 
             try {
-                const response = await fetch(endpoint, {
+                const res = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password })
                 });
-
-                const data = await response.json();
+                const data = await res.json();
 
                 if (data.success) {
-                    alert(isLoginMode ? 'تم تسجيل الدخول بنجاح!' : 'تم إنشاء الحساب بنجاح!');
-                    authSection.style.display = 'none';
-                    chatSection.style.display = 'block';
+                    authContainer.style.display = 'none';
+                    appContainer.style.display = 'flex';
+                    initApp();
                 } else {
                     alert(data.error || 'حدث خطأ في البيانات');
                 }
-            } catch (error) {
-                alert('خطأ في الاتصال بالخادم');
+            } catch (err) {
+                alert('خطأ في الاتصال بالسيرفر');
             } finally {
-                submitBtn.textContent = isLoginMode ? 'دخول' : 'تسجيل';
-                submitBtn.disabled = false;
+                authSubmitBtn.textContent = isLogin ? 'دخول' : 'تسجيل';
+                authSubmitBtn.disabled = false;
             }
         });
 
-        // التعامل مع إرسال الرسائل للذكاء الاصطناعي
-        const chatForm = document.getElementById('chat-form');
-        const chatBox = document.getElementById('chat-box');
-        const chatInput = document.getElementById('chat-input');
+        logoutBtn.addEventListener('click', () => {
+            appContainer.style.display = 'none';
+            authContainer.style.display = 'flex';
+        });
 
-        function appendMessage(text, className) {
-            const div = document.createElement('div');
-            div.className = 'message ' + className;
-            div.textContent = text;
-            chatBox.appendChild(div);
-            chatBox.scrollTop = chatBox.scrollHeight;
+        // إدارة الشات والمحادثات
+        function initApp() {
+            if (chats.length === 0) {
+                createNewChat();
+            } else {
+                selectChat(chats[0].id);
+            }
+            renderChatsList();
         }
 
+        function createNewChat() {
+            const newChat = {
+                id: Date.now().toString(),
+                title: 'محادثة جديدة',
+                messages: []
+            };
+            chats.unshift(newChat);
+            saveChats();
+            selectChat(newChat.id);
+            renderChatsList();
+        }
+
+        function selectChat(id) {
+            currentChatId = id;
+            const chat = chats.find(c => c.id === id);
+            if (!chat) return;
+
+            currentChatTitle.textContent = chat.title;
+            chatMessages.innerHTML = '';
+
+            if (chat.messages.length === 0) {
+                emptyChat.style.display = 'block';
+                chatMessages.appendChild(emptyChat);
+            } else {
+                emptyChat.style.display = 'none';
+                chat.messages.forEach(msg => appendMessageUI(msg.text, msg.sender));
+            }
+            renderChatsList();
+        }
+
+        function renderChatsList() {
+            chatsList.innerHTML = '';
+            chats.forEach(chat => {
+                const div = document.createElement('div');
+                div.className = `chat-item ${chat.id === currentChatId ? 'active' : ''}`;
+                
+                div.innerHTML = `
+                    <span class="chat-title-text" onclick="selectChat('${chat.id}')">${chat.title}</span>
+                    <div class="chat-actions">
+                        <button class="action-btn" onclick="renameChat('${chat.id}')" title="تعديل الاسم">✏️</button>
+                        <button class="action-btn delete" onclick="deleteChat('${chat.id}')" title="حذف">🗑️</button>
+                    </div>
+                `;
+                chatsList.appendChild(div);
+            });
+        }
+
+        window.renameChat = function(id) {
+            const chat = chats.find(c => c.id === id);
+            if (!chat) return;
+            const newTitle = prompt('أدخل الاسم الجديد للمحادثة:', chat.title);
+            if (newTitle && newTitle.trim() !== '') {
+                chat.title = newTitle.trim();
+                saveChats();
+                renderChatsList();
+                if (chat.id === currentChatId) currentChatTitle.textContent = chat.title;
+            }
+        };
+
+        window.deleteChat = function(id) {
+            if (chats.length <= 1) {
+                alert('يجب أن تبقى محادثة واحدة على الأقل');
+                return;
+            }
+            chats = chats.filter(c => c.id !== id);
+            saveChats();
+            if (currentChatId === id) {
+                selectChat(chats[0].id);
+            } else {
+                renderChatsList();
+            }
+        };
+
+        function saveChats() {
+            localStorage.setItem('smart_ai_chats', JSON.stringify(chats));
+        }
+
+        newChatBtn.addEventListener('click', createNewChat);
+
+        function appendMessageUI(text, sender) {
+            emptyChat.style.display = 'none';
+            const div = document.createElement('div');
+            div.className = `message ${sender === 'user' ? 'user-message' : 'ai-message'}`;
+            div.textContent = text;
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // إرسال الرسالة للذكاء الاصطناعي
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const prompt = chatInput.value;
-            if (!prompt) return;
+            const text = chatInput.value.trim();
+            if (!text) return;
 
-            // عرض رسالة المستخدم
-            appendMessage(prompt, 'user-msg');
+            const chat = chats.find(c => c.id === currentChatId);
+            if (!chat) return;
+
+            // إذا كانت أول رسالة، نخلي عنوان الشات نفس نص السؤال كاختصار ذكي
+            if (chat.title === 'محادثة جديدة') {
+                chat.title = text.length > 20 ? text.substring(0, 20) + '...' : text;
+                currentChatTitle.textContent = chat.title;
+            }
+
+            chat.messages.push({ text, sender: 'user' });
+            appendMessageUI(text, 'user');
             chatInput.value = '';
+            saveChats();
+            renderChatsList();
+
+            // رسالة انتظار مؤقتة
+            const loadingId = 'loading-' + Date.now();
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message ai-message';
+            loadingDiv.id = loadingId;
+            loadingDiv.textContent = 'جاري الكتابة...';
+            chatMessages.appendChild(loadingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
 
             try {
-                // الاتصال بمسار الذكاء الاصطناعي
-                const response = await fetch('/api/chat', {
+                const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt })
+                    body: JSON.stringify({ prompt: text })
                 });
+                const data = await res.json();
 
-                const data = await response.json();
+                document.getElementById(loadingId).remove();
 
                 if (data.success) {
-                    appendMessage(data.text, 'ai-msg');
+                    chat.messages.push({ text: data.text, sender: 'ai' });
+                    appendMessageUI(data.text, 'ai');
+                    saveChats();
                 } else {
-                    appendMessage('خطأ: ' + (data.error || 'فشل في جلب الرد'), 'ai-msg');
+                    appendMessageUI('عذراً، حدث خطأ في معالجة الطلب.', 'ai');
                 }
-            } catch (error) {
-                appendMessage('خطأ في الاتصال بالخادم', 'ai-msg');
+            } catch (err) {
+                document.getElementById(loadingId).remove();
+                appendMessageUI('خطأ في الاتصال بالخادم.', 'ai');
             }
         });
     </script>
