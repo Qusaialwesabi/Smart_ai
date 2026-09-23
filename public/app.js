@@ -27,11 +27,15 @@ authToggleBtn.addEventListener('click', () => {
 async function checkAuth() {
   try {
     const res = await fetch('/api/auth/me');
-    if (res.ok) {
+    if (res.status === 200) {
       showApp();
       loadConversations();
-    } else { showAuth(); }
-  } catch { showAuth(); }
+    } else { 
+      showAuth(); 
+    }
+  } catch { 
+    showAuth(); 
+  }
 }
 
 function showAuth() { authScreen.style.display = 'flex'; appContainer.style.display = 'none'; }
@@ -43,14 +47,25 @@ authSubmitBtn.addEventListener('click', async () => {
   if (!email || !password) return alert('يرجى ملء جميع الحقول');
 
   const endpoint = isSignUp ? '/api/auth/signup' : '/api/auth/login';
+  
   try {
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    if (res.ok) { checkAuth(); } else { alert('خطأ في البيانات'); }
-  } catch { alert('تعذر الاتصال'); }
+
+    const data = await res.json();
+
+    if (res.ok && !data.error) {
+      showApp();
+      loadConversations();
+    } else { 
+      alert(data.error || 'خطأ في بيانات الدخول، تأكد من الإيميل وكلمة السر'); 
+    }
+  } catch (err) { 
+    alert('حدث خطأ في الاتصال بالسيرفر'); 
+  }
 });
 
 logoutBtn.addEventListener('click', async () => {
@@ -156,13 +171,15 @@ function renderMessage(content, role) {
   msgDiv.className = `message ${role}`;
 
   if (role === 'assistant') {
-    msgDiv.innerHTML = marked.parse(content || '');
+    msgDiv.innerHTML = typeof marked !== 'undefined' ? marked.parse(content || '') : content;
   } else {
     msgDiv.textContent = content;
   }
 
   messagesContainer.appendChild(msgDiv);
-  msgDiv.querySelectorAll('pre code').forEach((block) => hljs.highlightElement(block));
+  if (typeof hljs !== 'undefined') {
+    msgDiv.querySelectorAll('pre code').forEach((block) => hljs.highlightElement(block));
+  }
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
