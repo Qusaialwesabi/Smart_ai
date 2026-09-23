@@ -2,8 +2,9 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart AI Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Smart AI</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
@@ -11,38 +12,38 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 </head>
 <body>
-  <!-- شاشة الدخول والتسجيل -->
+  <!-- AUTH -->
   <div id="auth-screen" class="auth-container">
     <div class="auth-box">
       <h2 id="auth-title">تسجيل الدخول</h2>
-      <input type="email" id="auth-email" placeholder="البريد الإلكتروني" required>
-      <input type="password" id="auth-password" placeholder="كلمة السر" required>
-      <button id="auth-submit-btn">دخول</button>
+      <input type="email" id="auth-email" placeholder="البريد الإلكتروني" autocomplete="email">
+      <input type="password" id="auth-password" placeholder="كلمة السر" minlength="6" autocomplete="current-password">
+      <button id="auth-submit-btn" type="button">دخول</button>
       <p id="auth-toggle-btn">ليس لديك حساب؟ إنشاء حساب جديد</p>
     </div>
   </div>
 
-  <!-- الواجهة الرئيسية -->
+  <!-- APP -->
   <div id="app-container" class="app-container" style="display: none;">
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <button id="new-chat-btn"><i class="fas fa-plus"></i> محادثة جديدة</button>
+        <button id="new-chat-btn" type="button"><i class="fas fa-plus"></i> محادثة جديدة</button>
       </div>
       <div id="conversations-list" class="conversations-list"></div>
       <div class="sidebar-footer">
-        <button id="logout-btn"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</button>
+        <button id="logout-btn" type="button"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</button>
       </div>
     </aside>
 
     <main class="chat-area">
       <header class="chat-header">
-        <button id="toggle-sidebar"><i class="fas fa-bars"></i></button>
-        <h3>الذكاء الاصطناعي</h3>
+        <button id="toggle-sidebar" type="button"><i class="fas fa-bars"></i></button>
+        <h3>Smart AI</h3>
       </header>
       <div id="messages-container" class="messages-container"></div>
       <div class="input-area">
         <input type="text" id="message-input" placeholder="اكتب رسالتك هنا...">
-        <button id="send-btn"><i class="fas fa-paper-plane"></i></button>
+        <button id="send-btn" type="button"><i class="fas fa-paper-plane"></i></button>
       </div>
     </main>
   </div>
