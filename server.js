@@ -96,9 +96,22 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// تشغيل الخادم
+// تشغيل الخادم مع آلية Keep-Alive (كل 10 ثوانٍ)
 // ----------------------------------------------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
+
+  // رابط موقعك الأساسي على Render
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || 'https://qusai-alwesabi.onrender.com';
+
+  // إرسال طلب لنفسه كل 10 ثوانٍ (10000 ميللي ثانية) لمنع السكون نهائياً
+  setInterval(async () => {
+    try {
+      await fetch(RENDER_URL);
+      console.log('Keep-alive self-ping sent successfully.');
+    } catch (error) {
+      console.log('Keep-alive self-ping error:', error.message);
+    }
+  }, 10 * 1000);
 });
