@@ -1,114 +1,147 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Smart AI</title>
-  
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
-  
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
-
-  <style>
-    :root {
-      --bg-color: #0f172a; --card-bg: #1e293b; --accent-color: #6366f1;
-      --text-main: #f8fafc; --text-muted: #94a3b8; --border-color: #334155;
-      --user-msg-bg: #4f46e5; --ai-msg-bg: #1e293b;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background-color: var(--bg-color); color: var(--text-main); height: 100vh; height: 100dvh; overflow: hidden; }
-
-    #auth-screen { position: fixed; inset: 0; background: var(--bg-color); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .auth-card { background: var(--card-bg); border: 1px solid var(--border-color); padding: 30px; border-radius: 16px; width: 100%; max-width: 400px; text-align: center; }
-    .auth-card h2 { margin-bottom: 20px; }
-    .auth-card input { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: #fff; outline: none; }
-    .auth-card button { width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--accent-color); color: #fff; font-weight: bold; cursor: pointer; margin-top: 8px; }
-    .auth-toggle { margin-top: 15px; font-size: 0.88rem; color: var(--text-muted); cursor: pointer; }
-    .auth-toggle span { color: var(--accent-color); text-decoration: underline; }
-
-    #app-container { display: flex; width: 100%; height: 100%; position: relative; }
-    #sidebar { width: 280px; background-color: #0b1120; border-left: 1px solid var(--border-color); display: flex; flex-direction: column; transition: transform 0.3s ease; z-index: 100; flex-shrink: 0; }
-    
-    #chat-main { flex: 1; display: flex; flex-direction: column; height: 100%; background-color: var(--bg-color); min-width: 0; }
-    header { padding: 12px 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.9); }
-    .mobile-toggle { display: none; background: none; border: none; color: var(--text-main); font-size: 1.2rem; cursor: pointer; }
-    
-    #messages-container { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
-    
-    .message { max-width: 90%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; overflow-wrap: break-word; word-break: break-word; }
-    .message.user { align-self: flex-start; background-color: var(--user-msg-bg); color: #fff; }
-    .message.assistant { align-self: flex-end; background-color: var(--ai-msg-bg); border: 1px solid var(--border-color); width: 100%; }
-
-    .message pre { background: #090d16 !important; padding: 12px; border-radius: 8px; margin: 10px 0; overflow-x: auto; max-width: 100%; direction: ltr; text-align: left; }
-    .message code { font-family: monospace; white-space: pre-wrap; }
-    .message pre code { white-space: pre; }
-
-    #input-area { padding: 12px 16px; background-color: var(--card-bg); border-top: 1px solid var(--border-color); display: flex; gap: 8px; align-items: center; }
-    #message-input { flex: 1; background-color: var(--bg-color); border: 1px solid var(--border-color); color: #fff; padding: 12px 16px; border-radius: 24px; outline: none; }
-    .btn-icon { background-color: var(--accent-color); color: #fff; border: none; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
-
-    .conv-item { padding: 10px; border-radius: 8px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); cursor: pointer; gap: 8px; transition: 0.2s; }
-    .conv-item.active { background: var(--card-bg); color: #fff; border-right: 3px solid var(--accent-color); }
-    .conv-item:hover { background: rgba(255,255,255,0.05); }
-    .conv-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
-    
-    .conv-actions { display: flex; gap: 10px; opacity: 0.6; }
-    .conv-item:hover .conv-actions { opacity: 1; }
-    .conv-actions i { cursor: pointer; transition: 0.2s; }
-    .conv-actions .edit-btn:hover { color: #3b82f6; }
-    .conv-actions .del-btn:hover { color: #ef4444; }
-
-    @media (max-width: 768px) {
-      .mobile-toggle { display: block; }
-      #sidebar { position: absolute; top: 0; bottom: 0; right: 0; transform: translateX(100%); width: 260px; }
-      #sidebar.open { transform: translateX(0); }
-      .message { max-width: 95%; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart AI - تطبيق الذكاء الاصطناعي</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background-color: #1e293b; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h2 { text-align: center; margin-bottom: 20px; color: #38bdf8; }
+        input[type="email"], input[type="password"], input[type="text"] { width: 100%; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #334155; background-color: #0f172a; color: white; outline: none; }
+        button { width: 100%; padding: 12px; background-color: #0284c7; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; margin-top: 10px; transition: 0.3s; }
+        button:hover { background-color: #0369a1; }
+        .switch-form { text-align: center; margin-top: 15px; color: #94a3b8; cursor: pointer; font-size: 14px; }
+        .switch-form:hover { color: #38bdf8; }
+        #chat-section { display: none; }
+        .chat-box { background-color: #0f172a; height: 300px; border-radius: 6px; overflow-y: auto; padding: 15px; margin-bottom: 15px; border: 1px solid #334155; }
+        .message { margin-bottom: 15px; padding: 10px; border-radius: 6px; max-width: 80%; }
+        .user-msg { background-color: #0284c7; align-self: flex-start; margin-left: auto; }
+        .ai-msg { background-color: #334155; align-self: flex-end; margin-right: auto; }
+        .chat-input-group { display: flex; gap: 10px; }
+        .chat-input-group input { margin: 0; }
+        .chat-input-group button { margin: 0; width: 80px; }
+    </style>
 </head>
 <body>
 
-  <div id="auth-screen">
-    <div class="auth-card">
-      <h2 id="auth-title">تسجيل الدخول</h2>
-      <input type="email" id="auth-email" placeholder="البريد الإلكتروني" />
-      <input type="password" id="auth-password" placeholder="كلمة المرور" />
-      <button id="auth-submit-btn">دخول</button>
-      <div class="auth-toggle" id="auth-toggle-btn">ليس لديك حساب؟ <span>إنشاء حساب جديد</span></div>
-    </div>
-  </div>
-
-  <div id="app-container" style="display: none;">
-    <div id="sidebar">
-      <div style="padding: 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="font-size: 1.1rem;">المحادثات</h3>
-        <button id="new-chat-btn" style="background: var(--accent-color); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">جديد +</button>
-      </div>
-      <div id="conversations-list" style="flex: 1; overflow-y: auto; padding: 10px;"></div>
-      <div style="padding: 16px; border-top: 1px solid var(--border-color);">
-        <button id="logout-btn" style="width: 100%; background: #ef4444; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer;">تسجيل الخروج</button>
-      </div>
+    <!-- قسم تسجيل الدخول وإنشاء الحساب -->
+    <div class="container" id="auth-section">
+        <h2 id="form-title">تسجيل الدخول</h2>
+        <form id="auth-form">
+            <input type="email" id="email" placeholder="البريد الإلكتروني" required>
+            <input type="password" id="password" placeholder="كلمة المرور" required>
+            <button type="submit" id="submit-btn">دخول</button>
+        </form>
+        <div class="switch-form" id="switch-mode">ليس لديك حساب؟ إنشاء حساب جديد</div>
     </div>
 
-    <div id="chat-main">
-      <header>
-        <button class="mobile-toggle" id="toggle-sidebar"><i class="fas fa-bars"></i></button>
-        <h2 style="font-size: 1.1rem; font-weight: 600;">Smart AI</h2>
-        <div style="width: 24px;"></div>
-      </header>
-
-      <div id="messages-container"></div>
-
-      <div id="input-area">
-        <input type="text" id="message-input" placeholder="اكتب رسالتك هنا..." />
-        <button class="btn-icon" id="send-btn" title="إرسال"><i class="fas fa-paper-plane"></i></button>
-      </div>
+    <!-- قسم الدردشة مع الذكاء الاصطناعي -->
+    <div class="container" id="chat-section">
+        <h2>Smart AI</h2>
+        <div class="chat-box" id="chat-box">
+            <!-- الرسائل ستظهر هنا -->
+        </div>
+        <form class="chat-input-group" id="chat-form">
+            <input type="text" id="chat-input" placeholder="اكتب سؤالك هنا..." required>
+            <button type="submit">إرسال</button>
+        </form>
     </div>
-  </div>
 
-  <script src="/app.js"></script>
+    <script>
+        let isLoginMode = true;
+        
+        const authSection = document.getElementById('auth-section');
+        const chatSection = document.getElementById('chat-section');
+        const authForm = document.getElementById('auth-form');
+        const switchModeBtn = document.getElementById('switch-mode');
+        const formTitle = document.getElementById('form-title');
+        const submitBtn = document.getElementById('submit-btn');
+
+        // التبديل بين تسجيل الدخول وإنشاء الحساب
+        switchModeBtn.addEventListener('click', () => {
+            isLoginMode = !isLoginMode;
+            formTitle.textContent = isLoginMode ? 'تسجيل الدخول' : 'إنشاء حساب جديد';
+            submitBtn.textContent = isLoginMode ? 'دخول' : 'تسجيل';
+            switchModeBtn.textContent = isLoginMode ? 'ليس لديك حساب؟ إنشاء حساب جديد' : 'لديك حساب بالفعل؟ تسجيل الدخول';
+        });
+
+        // التعامل مع فورم الدخول/التسجيل (بدون استخدام localhost)
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const endpoint = isLoginMode ? '/api/login' : '/api/register';
+
+            submitBtn.textContent = 'جاري التحميل...';
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert(isLoginMode ? 'تم تسجيل الدخول بنجاح!' : 'تم إنشاء الحساب بنجاح!');
+                    authSection.style.display = 'none';
+                    chatSection.style.display = 'block';
+                } else {
+                    alert(data.error || 'حدث خطأ في البيانات');
+                }
+            } catch (error) {
+                alert('خطأ في الاتصال بالخادم');
+            } finally {
+                submitBtn.textContent = isLoginMode ? 'دخول' : 'تسجيل';
+                submitBtn.disabled = false;
+            }
+        });
+
+        // التعامل مع إرسال الرسائل للذكاء الاصطناعي
+        const chatForm = document.getElementById('chat-form');
+        const chatBox = document.getElementById('chat-box');
+        const chatInput = document.getElementById('chat-input');
+
+        function appendMessage(text, className) {
+            const div = document.createElement('div');
+            div.className = 'message ' + className;
+            div.textContent = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const prompt = chatInput.value;
+            if (!prompt) return;
+
+            // عرض رسالة المستخدم
+            appendMessage(prompt, 'user-msg');
+            chatInput.value = '';
+
+            try {
+                // الاتصال بمسار الذكاء الاصطناعي
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    appendMessage(data.text, 'ai-msg');
+                } else {
+                    appendMessage('خطأ: ' + (data.error || 'فشل في جلب الرد'), 'ai-msg');
+                }
+            } catch (error) {
+                appendMessage('خطأ في الاتصال بالخادم', 'ai-msg');
+            }
+        });
+    </script>
 </body>
 </html>
