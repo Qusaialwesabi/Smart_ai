@@ -10,7 +10,10 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// استدعاء المفاتيح الأربعة (أو أي عدد متاح) من ملف .env
+// 🟢 الربط بمجلد الواجهة (public) ليعرض موقعك عند فتح الرابط المباشر
+app.use(express.static('public'));
+
+// استدعاء المفاتيح الأربعة من ملف .env
 const apiKeys = process.env.GEMINI_API_KEYS ? process.env.GEMINI_API_KEYS.split(',') : [];
 let currentKeyIndex = 0;
 
@@ -19,7 +22,7 @@ function getAiClient() {
     return new GoogleGenAI({ apiKey: apiKeys[currentKeyIndex] });
 }
 
-// 🟢 مسار فحص حالة السيرفر (يستخدم لمنع النوم)
+// 🟢 مسار فحص حالة السيرفر (منع النوم)
 app.get('/ping', (req, res) => {
     res.status(200).send('Server is awake and fully operational! 🚀');
 });
@@ -61,16 +64,14 @@ app.listen(PORT, () => {
     console.log(`✅ السيرفر يعمل بنجاح على المنفذ ${PORT}`);
     console.log(`🔑 عدد المفاتيح المجهزة للدوران: ${apiKeys.length}`);
     
-    // ⏰ نظام الزيارة الذاتية (Self-Ping) لمنع نوم خوادم Render
-    // يتم استخدام الرابط الخاص بك مباشرة أو الرابط المحلي للتجربة
+    // ⏰ نظام الزيارة الذاتية (Self-Ping) كل 10 دقائق لمنع النوم
     const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
     
-    // إرسال طلب (Ping) كل 10 دقائق (600,000 ملي ثانية)
     setInterval(async () => {
         try {
             const response = await fetch(`${serverUrl}/ping`);
             if (response.ok) {
-                console.log(`[Keep-Alive] تمت الزيارة الذاتية بنجاح لمنع النوم في: ${new Date().toLocaleTimeString()}`);
+                console.log(`[Keep-Alive] تمت الزيارة الذاتية بنجاح في: ${new Date().toLocaleTimeString()}`);
             }
         } catch (error) {
             console.error('[Keep-Alive] فشلت الزيارة الذاتية:', error.message);
