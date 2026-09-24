@@ -41,7 +41,7 @@ const uniqueKeys = [...new Set(apiKeys)];
 const keyStates = uniqueKeys.map((key, idx) => ({
   key,
   idx,
-  exhaustedUntil: 0,   // timestamp when key becomes usable again
+  exhaustedUntil: 0,
   lastUsed: 0,
   successCount: 0,
   failCount: 0,
@@ -50,7 +50,6 @@ const keyStates = uniqueKeys.map((key, idx) => ({
 
 console.log(`✅ Loaded ${keyStates.length} Gemini key(s).`);
 
-// Pick least-recently-used, available key
 function pickKey() {
   const now = Date.now();
   const available = keyStates.filter(k => k.exhaustedUntil <= now);
@@ -59,7 +58,6 @@ function pickKey() {
   return available[0];
 }
 
-// Mark a key as exhausted for N seconds
 function coolDown(state, seconds, reason) {
   state.exhaustedUntil = Date.now() + seconds * 1000;
   state.failCount++;
@@ -67,7 +65,6 @@ function coolDown(state, seconds, reason) {
   console.warn(`🔴 Key #${state.idx + 1} cooldown for ${seconds}s — ${reason}`);
 }
 
-// Detect if error is quota/rate related
 function isQuotaError(msg) {
   const m = String(msg || '').toLowerCase();
   return (
@@ -85,46 +82,75 @@ function isServerError(msg) {
 }
 
 // ============================================
-// GENERATE TEXT (with Key Rotation)
+// MODELS (in order of preference)
 // ============================================
-async function generateText(contents, modelName = 'gemini-3.5-flash-lite') {
+const MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-2.5-flash-lite',
+  'gemini-flash-latest',
+];
+
+// ============================================
+// GENERATE TEXT (with Key Rotation + Model Fallback)
+// ============================================
+async function generateText(contents) {
   if (keyStates.length === 0) throw new Error('No API keys configured.');
 
-  const maxAttempts = keyStates.length + 3;
   let lastError = '';
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const state = pickKey();
-    if (!state) {
-      throw new Error('ALL_KEYS_EXHAUSTED');
-    }
+  for (const modelName of MODELS) {
+    console.log(`🔄 Trying model: ${modelName}`);
+    let modelFound = false;
 
-    state.lastUsed = Date.now();
+    const maxAttempts = keyStates.length + 2;
 
-    try {
-      const ai = new GoogleGenAI({ apiKey: state.key });
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents,
-      });
-
-      state.successCount++;
-      return response.text || '';
-    } catch (err) {
-      const msg = String(err.message || '');
-
-      if (isQuotaError(msg)) {
-        // Cooldown for 60s (quota per minute) — will retry other keys
-        coolDown(state, 60, 'quota/rate limit');
-      } else if (isServerError(msg)) {
-        coolDown(state, 20, 'server error');
-      } else {
-        // Unknown error — short cooldown
-        coolDown(state, 10, msg.slice(0, 80));
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const state = pickKey();
+      if (!state) {
+        throw new Error('ALL_KEYS_EXHAUSTED');
       }
 
-      lastError = msg;
-      // Loop continues → tries next key
+      state.lastUsed = Date.now();
+
+      try {
+        const ai = new GoogleGenAI({ apiKey: state.key });
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents,
+        });
+
+        state.successCount++;
+        console.log(`✅ Key #${state.idx + 1} (${modelName}) succeeded (total: ${state.successCount})`);
+        return response.text || '';
+      } catch (err) {
+        const msg = String(err.message || '');
+        console.error(`❌ Key #${state.idx + 1} (${modelName}) error:`, msg.slice(0, 200));
+
+        // Model not found → try next model
+        if (msg.includes('404') || msg.includes('not found') || msg.toLowerCase().includes('is not found')) {
+          lastError = msg;
+          modelFound = false;
+          break; // exit key loop, try next model
+        }
+
+        modelFound = true;
+
+        if (isQuotaError(msg)) {
+          coolDown(state, 60, 'quota/rate limit');
+        } else if (isServerError(msg)) {
+          coolDown(state, 20, 'server error');
+        } else if (msg.includes('400') || msg.includes('not supported') || msg.includes('invalid')) {
+          // Bad request — our fault, don't retry with other keys
+          throw new Error('BAD_REQUEST: ' + msg.slice(0, 200));
+        } else {
+          coolDown(state, 10, msg.slice(0, 80));
+        }
+      }
+    }
+
+    if (!modelFound && lastError) {
+      console.warn(`⚠️ Model "${modelName}" not available, trying next...`);
+      continue;
     }
   }
 
@@ -157,7 +183,6 @@ async function requireAuth(req, res, next) {
 // ROUTES
 // ============================================
 
-// Health / ping
 app.get('/ping', (req, res) => res.status(200).send('OK 🚀'));
 
 // ---- AUTH ----
@@ -237,7 +262,6 @@ app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   const { id } = req.params;
 
-  // Verify ownership
   const { data: conv } = await supabase
     .from('conversations')
     .select('id')
@@ -278,18 +302,39 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     .insert([{ conversation_id: id, role: 'user', content: content.trim() }]);
   if (userErr) return res.status(500).json({ error: userErr.message });
 
-  // Load history (last 20 messages)
-  const { data: history } = await supabase
+  // ============================================
+  // Load last 20 messages (NEWEST first, then reverse)
+  // ============================================
+  const { data: historyRaw } = await supabase
     .from('messages')
     .select('role, content')
     .eq('conversation_id', id)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(20);
 
-  const contents = (history || []).map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content || '' }],
-  }));
+  const history = (historyRaw || []).reverse();
+
+  // ============================================
+  // Build Gemini contents with strict rules
+  // ============================================
+  const contents = [];
+  for (const m of history) {
+    const role = m.role === 'assistant' ? 'model' : 'user';
+    if (contents.length > 0 && contents[contents.length - 1].role === role) continue;
+    contents.push({ role, parts: [{ text: m.content || '' }] });
+  }
+
+  while (contents.length > 0 && contents[0].role === 'model') {
+    contents.shift();
+  }
+
+  while (contents.length > 0 && contents[contents.length - 1].role === 'model') {
+    contents.pop();
+  }
+
+  if (contents.length === 0) {
+    contents.push({ role: 'user', parts: [{ text: content.trim() }] });
+  }
 
   // Generate AI reply
   let aiText = '';
@@ -300,6 +345,8 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     console.error('Generate error:', err.message);
     if (err.message === 'ALL_KEYS_EXHAUSTED') {
       aiText = '⚠️ تم استهلاك جميع المفاتيح مؤقتاً. حاول بعد دقيقة.';
+    } else if (err.message.startsWith('BAD_REQUEST')) {
+      aiText = '⚠️ خطأ في صيغة الطلب. حاول مرة أخرى.';
     } else if (err.message.startsWith('GENERATION_FAILED')) {
       aiText = '⚠️ حدث خطأ في التوليد. حاول مرة أخرى.';
     } else {
@@ -324,18 +371,19 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   res.json({ aiMessage: aiMsg || { role: 'assistant', content: aiText } });
 });
 
-// ---- KEYS STATUS (debug, for logged-in users) ----
+// ---- KEYS STATUS ----
 app.get('/api/keys-status', requireAuth, (req, res) => {
   const now = Date.now();
   res.json({
     total: keyStates.length,
+    models: MODELS,
     status: keyStates.map(k => ({
       index: k.idx + 1,
       available: k.exhaustedUntil <= now,
       cooldownSec: Math.max(0, Math.ceil((k.exhaustedUntil - now) / 1000)),
       success: k.successCount,
       fail: k.failCount,
-      lastError: k.lastError,
+      lastError: k.lastError ? k.lastError.slice(0, 100) : '',
     })),
   });
 });
@@ -354,13 +402,13 @@ if (SELF_URL) {
     fetch(`${SELF_URL}/ping`)
       .then(r => console.log(`💓 Self-ping OK (${r.status})`))
       .catch(e => console.warn('Self-ping failed:', e.message));
-  }, 10 * 60 * 1000); // 10 minutes
+  }, 10 * 60 * 1000);
 } else {
   console.log('ℹ️ Self-ping disabled (no SERVER_URL or RENDER_EXTERNAL_URL).');
-  console.log('   Set SERVER_URL=https://your-app.onrender.com to enable.');
 }
 
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔑 Keys loaded: ${keyStates.length}`);
+  console.log(`📦 Models: ${MODELS.join(' → ')}`);
 });
