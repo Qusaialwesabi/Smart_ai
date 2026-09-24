@@ -15,41 +15,77 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 </head>
 <body>
-  <!-- شاشة الدخول والتسجيل -->
+
+  <!-- ============ AUTH SCREEN ============ -->
   <div id="auth-screen" class="auth-container">
     <div class="auth-box">
       <h2 id="auth-title">تسجيل الدخول</h2>
-      <input type="email" id="auth-email" placeholder="البريد الإلكتروني" autocomplete="email" inputmode="email">
-      <input type="password" id="auth-password" placeholder="كلمة السر" autocomplete="current-password" minlength="6">
+      <input
+        type="email"
+        id="auth-email"
+        placeholder="البريد الإلكتروني"
+        autocomplete="email"
+        inputmode="email">
+      <input
+        type="password"
+        id="auth-password"
+        placeholder="كلمة السر"
+        autocomplete="current-password"
+        minlength="6">
       <button id="auth-submit-btn" type="button">دخول</button>
       <p id="auth-toggle-btn">ليس لديك حساب؟ إنشاء حساب جديد</p>
     </div>
   </div>
 
-  <!-- الواجهة الرئيسية -->
+  <!-- ============ MAIN APP ============ -->
   <div id="app-container" class="app-container" style="display: none;">
+
+    <!-- Sidebar Overlay -->
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Sidebar -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <button id="new-chat-btn" type="button"><i class="fas fa-plus"></i> محادثة جديدة</button>
+        <button id="new-chat-btn" type="button">
+          <i class="fas fa-plus"></i> محادثة جديدة
+        </button>
       </div>
       <div id="conversations-list" class="conversations-list"></div>
       <div class="sidebar-footer">
-        <button id="logout-btn" type="button"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</button>
+        <button id="logout-btn" type="button">
+          <i class="fas fa-sign-out-alt"></i> تسجيل الخروج
+        </button>
       </div>
     </aside>
 
+    <!-- Chat Area -->
     <main class="chat-area">
       <header class="chat-header">
-        <button id="toggle-sidebar" type="button" aria-label="القائمة"><i class="fas fa-bars"></i></button>
+        <button id="toggle-sidebar" type="button" aria-label="القائمة">
+          <i class="fas fa-bars"></i>
+        </button>
         <h3>Smart AI</h3>
       </header>
+
       <div id="messages-container" class="messages-container"></div>
+
       <div class="input-area">
-        <input type="text" id="message-input" placeholder="اكتب رسالتك هنا..." autocomplete="off" enterkeyhint="send">
-        <button id="send-btn" type="button" aria-label="إرسال"><i class="fas fa-paper-plane"></i></button>
+        <input
+          type="text"
+          id="message-input"
+          placeholder="اكتب رسالتك هنا..."
+          autocomplete="off"
+          enterkeyhint="send">
+        <button
+          id="send-btn"
+          type="button"
+          aria-label="إرسال"
+          onclick="window.sendMessage && window.sendMessage()">
+          <i class="fas fa-paper-plane"></i>
+        </button>
       </div>
     </main>
+
   </div>
 
   <script src="app.js"></script>
