@@ -63,17 +63,13 @@ function isOverloaded(msg) {
 }
 
 // ============================================
-// MODEL — single model only, per current setup
+// MODEL
 // ============================================
 const MODEL = 'gemini-3.5-flash-lite';
-
-// Number of full rounds over all keys before giving up.
-// Lowered from 3 to 2 since there's no fallback model to escape to,
-// so there's no point making the user wait long before a clear error.
 const MAX_ROUNDS = 2;
 
 // ============================================
-// GENERATE TEXT (smarter per-key retry logic)
+// GENERATE TEXT
 // ============================================
 async function generateText(contents) {
   if (keyStates.length === 0) throw new Error('No API keys.');
@@ -85,7 +81,7 @@ async function generateText(contents) {
 
     for (let k = 0; k < keyStates.length; k++) {
       const state = pickKey();
-      if (!state) continue; // all keys currently cooling down, try again next round
+      if (!state) continue;
 
       triedAnyKeyThisRound = true;
       state.lastUsed = Date.now();
@@ -103,16 +99,12 @@ async function generateText(contents) {
         lastError = msg;
 
         if (msg.includes('400') || msg.includes('invalid')) {
-          // Malformed request — retrying with another key won't fix it
           throw new Error('BAD_REQUEST: ' + msg.slice(0, 200));
         } else if (isQuotaError(msg)) {
-          // This key's quota ran out — cool it down for a full minute
           coolDown(state, 60, 'quota');
         } else if (isOverloaded(msg)) {
-          // General overload on Google's side — exponential backoff based on
-          // how many times this key has hit 503 in a row
           state.consecutive503++;
-          const backoff = Math.min(10 * state.consecutive503, 45); // 10s, 20s, 30s, 40s, capped at 45s
+          const backoff = Math.min(10 * state.consecutive503, 45);
           coolDown(state, backoff, `google busy x${state.consecutive503}`);
         } else {
           coolDown(state, 8, msg.slice(0, 60));
@@ -120,7 +112,6 @@ async function generateText(contents) {
       }
     }
 
-    // If no key could be tried this round (all cooling down), wait a bit before the next round
     if (!triedAnyKeyThisRound && round < MAX_ROUNDS - 1) {
       console.log('⏳ All keys cooling down — waiting 5s...');
       await new Promise(r => setTimeout(r, 5000));
@@ -179,7 +170,27 @@ app.post('/api/auth/login', async (req, res) => {
   res.json(data);
 });
 
-// --- CONVERSATIONS ---
+// ============================================
+// REFRESH TOKEN (new)
+// ============================================
+app.post('/api/auth/refresh', async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Supabase not configured.' });
+  const { refresh_token } = req.body;
+  if (!refresh_token) return res.status(400).json({ error: 'refresh_token required.' });
+
+  try {
+    const { data, error } = await supabase.auth.refreshSession({ refresh_token });
+    if (error) return res.status(401).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    console.error('Refresh error:', err.message);
+    res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
+
+// ============================================
+// CONVERSATIONS
+// ============================================
 app.get('/api/conversations', requireAuth, async (req, res) => {
   const { data, error } = await supabase.from('conversations')
     .select('id, title, created_at, updated_at')
@@ -218,7 +229,9 @@ app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
-// --- MESSAGES ---
+// ============================================
+// MESSAGES
+// ============================================
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { data: conv } = await supabase.from('conversations')
@@ -246,16 +259,14 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     .insert([{ conversation_id: id, role: 'user', content: content.trim() }]);
   if (userErr) return res.status(500).json({ error: userErr.message });
 
-  // Last 20 messages
+  // Load last 20 messages
   const { data: historyRaw } = await supabase.from('messages')
     .select('role, content').eq('conversation_id', id)
     .order('created_at', { ascending: false }).limit(20);
 
   const history = (historyRaw || []).reverse();
 
-  // Build contents for Gemini: must start and end with "user" and alternate roles.
-  // Instead of dropping repeated same-role messages (which lost context before),
-  // we merge them into the previous entry.
+  // Build contents: alternate roles, start & end with user
   const contents = [];
   for (const m of history) {
     const role = m.role === 'assistant' ? 'model' : 'user';
@@ -294,7 +305,9 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   res.json({ aiMessage: aiMsg || { role: 'assistant', content: aiText } });
 });
 
-// --- KEYS STATUS ---
+// ============================================
+// KEYS STATUS
+// ============================================
 app.get('/api/keys-status', requireAuth, (req, res) => {
   const now = Date.now();
   res.json({
@@ -313,7 +326,7 @@ app.get('/api/keys-status', requireAuth, (req, res) => {
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // ============================================
-// SELF-PING — keeps the server awake every 10 minutes
+// SELF-PING
 // ============================================
 const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL || '';
 if (SELF_URL) {
