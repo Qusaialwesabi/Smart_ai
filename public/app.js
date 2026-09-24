@@ -18,9 +18,13 @@ const newChatBtn = document.getElementById('new-chat-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const toggleSidebar = document.getElementById('toggle-sidebar');
 const sidebar = document.getElementById('sidebar');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
 
 // ========== HELPERS ==========
-function getToken() { return localStorage.getItem('supabase_token'); }
+function getToken() {
+  return localStorage.getItem('supabase_token');
+}
+
 function getAuthHeaders() {
   const token = getToken();
   return {
@@ -28,11 +32,39 @@ function getAuthHeaders() {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   };
 }
+
 function escapeHtml(text) {
   const d = document.createElement('div');
   d.textContent = text || '';
   return d.innerHTML;
 }
+
+// ========== SIDEBAR ==========
+function openSidebar() {
+  if (sidebar) sidebar.classList.add('open');
+  if (sidebarOverlay) sidebarOverlay.classList.add('show');
+}
+
+function closeSidebar() {
+  if (sidebar) sidebar.classList.remove('open');
+  if (sidebarOverlay) sidebarOverlay.classList.remove('show');
+}
+
+if (toggleSidebar) {
+  toggleSidebar.addEventListener('click', () => {
+    if (sidebar.classList.contains('open')) closeSidebar();
+    else openSidebar();
+  });
+}
+
+if (sidebarOverlay) {
+  sidebarOverlay.addEventListener('click', closeSidebar);
+}
+
+// Close sidebar on Escape
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSidebar();
+});
 
 // ========== AUTH ==========
 authToggleBtn.addEventListener('click', () => {
@@ -45,6 +77,7 @@ function showAuth() {
   authScreen.style.display = 'flex';
   appContainer.style.display = 'none';
 }
+
 function showApp() {
   authScreen.style.display = 'none';
   appContainer.style.display = 'flex';
@@ -53,19 +86,25 @@ function showApp() {
 async function checkAuth() {
   const token = getToken();
   if (!token) return showAuth();
+
   try {
     const res = await fetch('/api/auth/me', { headers: getAuthHeaders() });
-    if (res.ok) { showApp(); loadConversations(); }
-    else {
+    if (res.ok) {
+      showApp();
+      loadConversations();
+    } else {
       localStorage.removeItem('supabase_token');
       showAuth();
     }
-  } catch { showAuth(); }
+  } catch {
+    showAuth();
+  }
 }
 
 authSubmitBtn.addEventListener('click', async () => {
   const email = authEmail.value.trim();
   const password = authPassword.value.trim();
+
   if (!email || !password) return alert('يرجى ملء جميع الحقول');
 
   const endpoint = isSignUp ? '/api/auth/signup' : '/api/auth/login';
@@ -101,13 +140,17 @@ authSubmitBtn.addEventListener('click', async () => {
   }
 });
 
+// Enter to submit on password field
+authPassword.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') authSubmitBtn.click();
+});
+
 logoutBtn.addEventListener('click', () => {
   localStorage.removeItem('supabase_token');
   currentConvId = null;
+  closeSidebar();
   showAuth();
 });
-
-toggleSidebar.addEventListener('click', () => sidebar.classList.toggle('open'));
 
 // ========== CONVERSATIONS ==========
 async function loadConversations() {
@@ -117,95 +160,124 @@ async function loadConversations() {
     conversationsList.innerHTML = '';
 
     if (data.conversations?.length > 0) {
-      data.conversations.forEach(c => renderConvItem(c));
-      if (!currentConvId || !data.conversations.find(c => c.id === currentConvId)) {
+      data.conversations.forEach((c) => renderConvItem(c));
+      if (!currentConvId || !data.conversations.find((c) => c.id === currentConvId)) {
         selectConv(data.conversations[0].id);
       }
     } else {
       createNewConv();
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 function renderConvItem(c) {
   const div = document.createElement('div');
   div.className = `conv-item ${c.id === currentConvId ? 'active' : ''}`;
   div.innerHTML = `
-    <div class="conv-title" data-id="${c.id}"><i class="far fa-comments"></i> ${escapeHtml(c.title)}</div>
+    <div class="conv-title" data-id="${c.id}">
+      <i class="far fa-comments"></i>
+      <span>${escapeHtml(c.title)}</span>
+    </div>
     <div class="conv-actions">
-      <i class="fas fa-pen edit-btn" data-id="${c.id}" data-title="${escapeHtml(c.title)}"></i>
-      <i class="fas fa-trash del-btn" data-id="${c.id}"></i>
+      <i class="fas fa-pen edit-btn" data-id="${c.id}" title="تعديل"></i>
+      <i class="fas fa-trash del-btn" data-id="${c.id}" title="حذف"></i>
     </div>
   `;
+
   div.querySelector('.conv-title').addEventListener('click', () => selectConv(c.id));
+
   div.querySelector('.edit-btn').addEventListener('click', (e) => {
     e.stopPropagation();
     editConv(c.id, c.title);
   });
+
   div.querySelector('.del-btn').addEventListener('click', (e) => {
     e.stopPropagation();
     deleteConv(c.id);
   });
+
   conversationsList.appendChild(div);
 }
 
 async function createNewConv() {
-  const res = await fetch('/api/conversations', {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ title: 'محادثة جديدة' }),
-  });
-  const data = await res.json();
-  if (data.conversation) {
-    currentConvId = data.conversation.id;
-    loadConversations();
-    messagesContainer.innerHTML = '';
+  try {
+    const res = await fetch('/api/conversations', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ title: 'محادثة جديدة' }),
+    });
+    const data = await res.json();
+    if (data.conversation) {
+      currentConvId = data.conversation.id;
+      loadConversations();
+      messagesContainer.innerHTML = '';
+    }
+  } catch (e) {
+    console.error(e);
   }
 }
 
-newChatBtn.addEventListener('click', createNewConv);
+newChatBtn.addEventListener('click', () => {
+  createNewConv();
+  closeSidebar();
+});
 
 async function selectConv(id) {
   currentConvId = id;
   loadConversations();
   loadMessages(id);
-  sidebar.classList.remove('open');
+  closeSidebar();
 }
 
 async function editConv(id, oldTitle) {
   const newTitle = prompt('الاسم الجديد:', oldTitle);
   if (!newTitle?.trim() || newTitle === oldTitle) return;
-  const res = await fetch(`/api/conversations/${id}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ title: newTitle.trim() }),
-  });
-  if (res.ok) loadConversations();
+
+  try {
+    const res = await fetch(`/api/conversations/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ title: newTitle.trim() }),
+    });
+    if (res.ok) loadConversations();
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 async function deleteConv(id) {
   if (!confirm('هل أنت متأكد من الحذف؟')) return;
-  const res = await fetch(`/api/conversations/${id}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-  });
-  if (res.ok) {
-    if (currentConvId === id) {
-      currentConvId = null;
-      messagesContainer.innerHTML = '';
+
+  try {
+    const res = await fetch(`/api/conversations/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      if (currentConvId === id) {
+        currentConvId = null;
+        messagesContainer.innerHTML = '';
+      }
+      loadConversations();
     }
-    loadConversations();
+  } catch (e) {
+    console.error(e);
   }
 }
 
 // ========== MESSAGES ==========
 async function loadMessages(id) {
   messagesContainer.innerHTML = '';
+
   try {
     const res = await fetch(`/api/conversations/${id}/messages`, { headers: getAuthHeaders() });
     const data = await res.json();
-    (data.messages || []).forEach(m => renderMessage(m.content, m.role));
-  } catch (e) { console.error(e); }
+    (data.messages || []).forEach((m) => renderMessage(m.content, m.role));
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 function renderMessage(content, role) {
@@ -214,7 +286,11 @@ function renderMessage(content, role) {
 
   if (role === 'assistant') {
     if (typeof marked !== 'undefined') {
-      msgDiv.innerHTML = marked.parse(content || '');
+      try {
+        msgDiv.innerHTML = marked.parse(content || '');
+      } catch {
+        msgDiv.textContent = content || '';
+      }
     } else {
       msgDiv.textContent = content || '';
     }
@@ -224,9 +300,12 @@ function renderMessage(content, role) {
 
   messagesContainer.appendChild(msgDiv);
 
+  // Highlight code blocks
   if (typeof hljs !== 'undefined') {
-    msgDiv.querySelectorAll('pre code').forEach(b => {
-      try { hljs.highlightElement(b); } catch (e) {}
+    msgDiv.querySelectorAll('pre code').forEach((block) => {
+      try {
+        hljs.highlightElement(block);
+      } catch (e) {}
     });
   }
 
@@ -234,7 +313,7 @@ function renderMessage(content, role) {
   return msgDiv;
 }
 
-// ========== SEND ==========
+// ========== SEND MESSAGE ==========
 async function sendMessage() {
   const text = messageInput.value.trim();
   if (!text || !currentConvId || isSending) return;
@@ -242,6 +321,7 @@ async function sendMessage() {
   isSending = true;
   sendBtn.disabled = true;
   messageInput.value = '';
+  messageInput.style.height = '';
 
   renderMessage(text, 'user');
 
@@ -278,8 +358,9 @@ async function sendMessage() {
 }
 
 sendBtn.addEventListener('click', sendMessage);
+
 messageInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
   }
