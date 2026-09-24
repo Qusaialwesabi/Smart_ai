@@ -2,6 +2,7 @@
 let currentConvId = null;
 let isSignUp = false;
 let isSending = false;
+let isRefreshing = false;
 
 // ============ ELEMENTS ============
 const authScreen = document.getElementById('auth-screen');
@@ -21,12 +22,100 @@ const toggleSidebar = document.getElementById('toggle-sidebar');
 const sidebar = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebar-overlay');
 
-// ============ HELPERS ============
+// ============ TOKEN MANAGEMENT ============
 function getToken() { return localStorage.getItem('supabase_token'); }
+function getRefreshToken() { return localStorage.getItem('supabase_refresh_token'); }
+
+function saveTokens(session) {
+  if (session?.access_token) {
+    localStorage.setItem('supabase_token', session.access_token);
+  }
+  if (session?.refresh_token) {
+    localStorage.setItem('supabase_refresh_token', session.refresh_token);
+  }
+}
+
+function clearTokens() {
+  localStorage.removeItem('supabase_token');
+  localStorage.removeItem('supabase_refresh_token');
+}
+
 function getAuthHeaders() {
   const t = getToken();
   return { 'Content-Type': 'application/json', ...(t ? { 'Authorization': `Bearer ${t}` } : {}) };
 }
+
+// Refresh access token using refresh_token
+async function refreshAccessToken() {
+  if (isRefreshing) return false;
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+
+  isRefreshing = true;
+  try {
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    const data = await res.json();
+
+    if (res.ok && data.session?.access_token) {
+      saveTokens(data.session);
+      console.log('✅ Token refreshed');
+      return true;
+    }
+
+    console.warn('❌ Refresh failed:', data.error || res.status);
+    return false;
+  } catch (e) {
+    console.error('Refresh error:', e);
+    return false;
+  } finally {
+    isRefreshing = false;
+  }
+}
+
+// Logout helper
+function forceLogout(message) {
+  clearTokens();
+  currentConvId = null;
+  closeSidebar();
+  showAuth();
+  if (message) alert(message);
+}
+
+// Wrapper: fetch with auto-refresh on 401
+async function authFetch(url, options = {}) {
+  // Ensure headers
+  options.headers = {
+    ...(options.headers || {}),
+    ...getAuthHeaders(),
+  };
+
+  let res = await fetch(url, options);
+
+  // If 401, try to refresh and retry once
+  if (res.status === 401) {
+    console.log('⚠️ 401 detected — refreshing token...');
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      // Retry with new token
+      options.headers = {
+        ...(options.headers || {}),
+        ...getAuthHeaders(),
+      };
+      res = await fetch(url, options);
+    } else {
+      forceLogout('انتهت جلستك. يرجى تسجيل الدخول مجدداً.');
+      throw new Error('UNAUTHORIZED');
+    }
+  }
+
+  return res;
+}
+
+// ============ HELPERS ============
 function escapeHtml(text) {
   const d = document.createElement('div');
   d.textContent = text || '';
@@ -63,10 +152,16 @@ function showApp() { authScreen.style.display = 'none'; appContainer.style.displ
 async function checkAuth() {
   if (!getToken()) return showAuth();
   try {
-    const res = await fetch('/api/auth/me', { headers: getAuthHeaders() });
-    if (res.ok) { showApp(); loadConversations(); }
-    else { localStorage.removeItem('supabase_token'); showAuth(); }
-  } catch { showAuth(); }
+    const res = await authFetch('/api/auth/me');
+    if (res.ok) {
+      showApp();
+      loadConversations();
+    } else {
+      forceLogout();
+    }
+  } catch (e) {
+    // authFetch handles logout on UNAUTHORIZED
+  }
 }
 
 if (authSubmitBtn) {
@@ -89,7 +184,7 @@ if (authSubmitBtn) {
       const data = await res.json();
 
       if (res.ok && data.session?.access_token) {
-        localStorage.setItem('supabase_token', data.session.access_token);
+        saveTokens(data.session);
         showApp();
         loadConversations();
       } else if (res.ok && isSignUp) {
@@ -109,24 +204,24 @@ if (authSubmitBtn) {
   });
 }
 
+if (authPassword) {
+  authPassword.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') authSubmitBtn.click();
+  });
+}
+
 if (logoutBtn) {
   logoutBtn.addEventListener('click', () => {
-    localStorage.removeItem('supabase_token');
-    currentConvId = null;
-    closeSidebar();
-    showAuth();
+    forceLogout();
   });
 }
 
 // ============ CONVERSATIONS ============
 async function loadConversations() {
   try {
-    const res = await fetch('/api/conversations', { headers: getAuthHeaders() });
-    if (res.status === 401) {
-      localStorage.removeItem('supabase_token');
-      showAuth();
-      return;
-    }
+    const res = await authFetch('/api/conversations');
+    if (!res.ok) return;
+
     const data = await res.json();
     conversationsList.innerHTML = '';
 
@@ -138,7 +233,9 @@ async function loadConversations() {
     } else {
       await createNewConv();
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    if (e.message !== 'UNAUTHORIZED') console.error(e);
+  }
 }
 
 function renderConvItem(c) {
@@ -162,9 +259,8 @@ function renderConvItem(c) {
 
 async function createNewConv() {
   try {
-    const res = await fetch('/api/conversations', {
+    const res = await authFetch('/api/conversations', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ title: 'محادثة جديدة' }),
     });
     const data = await res.json();
@@ -174,7 +270,9 @@ async function createNewConv() {
       messagesContainer.innerHTML = '';
       return currentConvId;
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    if (e.message !== 'UNAUTHORIZED') console.error(e);
+  }
   return null;
 }
 
@@ -195,20 +293,27 @@ async function selectConv(id) {
 async function editConv(id, oldTitle) {
   const newTitle = prompt('الاسم الجديد:', oldTitle);
   if (!newTitle?.trim() || newTitle === oldTitle) return;
-  const res = await fetch(`/api/conversations/${id}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ title: newTitle.trim() }),
-  });
-  if (res.ok) loadConversations();
+  try {
+    const res = await authFetch(`/api/conversations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ title: newTitle.trim() }),
+    });
+    if (res.ok) loadConversations();
+  } catch (e) {
+    if (e.message !== 'UNAUTHORIZED') console.error(e);
+  }
 }
 
 async function deleteConv(id) {
   if (!confirm('هل أنت متأكد؟')) return;
-  const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
-  if (res.ok) {
-    if (currentConvId === id) { currentConvId = null; messagesContainer.innerHTML = ''; }
-    loadConversations();
+  try {
+    const res = await authFetch(`/api/conversations/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      if (currentConvId === id) { currentConvId = null; messagesContainer.innerHTML = ''; }
+      loadConversations();
+    }
+  } catch (e) {
+    if (e.message !== 'UNAUTHORIZED') console.error(e);
   }
 }
 
@@ -216,10 +321,12 @@ async function deleteConv(id) {
 async function loadMessages(id) {
   messagesContainer.innerHTML = '';
   try {
-    const res = await fetch(`/api/conversations/${id}/messages`, { headers: getAuthHeaders() });
+    const res = await authFetch(`/api/conversations/${id}/messages`);
     const data = await res.json();
     (data.messages || []).forEach((m) => renderMessage(m.content, m.role));
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    if (e.message !== 'UNAUTHORIZED') console.error(e);
+  }
 }
 
 function renderMessage(content, role) {
@@ -247,16 +354,15 @@ function renderMessage(content, role) {
   return msgDiv;
 }
 
-// ============ SEND MESSAGE (GLOBAL) ============
+// ============ SEND MESSAGE ============
 window.sendMessage = async function() {
   console.log('📤 Send called | convId:', currentConvId, '| sending:', isSending);
 
   const text = (messageInput?.value || '').trim();
-  if (!text) { console.log('⚠️ Empty'); return; }
-  if (isSending) { console.log('⚠️ Already sending'); return; }
+  if (!text) return;
+  if (isSending) return;
 
   if (!currentConvId) {
-    console.log('⚠️ Creating conversation...');
     await createNewConv();
     if (!currentConvId) { alert('تعذر إنشاء محادثة. سجّل دخول مجدداً.'); return; }
   }
@@ -274,9 +380,8 @@ window.sendMessage = async function() {
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
   try {
-    const res = await fetch(`/api/conversations/${currentConvId}/messages`, {
+    const res = await authFetch(`/api/conversations/${currentConvId}/messages`, {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ content: text }),
     });
     const data = await res.json();
@@ -290,6 +395,7 @@ window.sendMessage = async function() {
     }
   } catch (err) {
     typingDiv.remove();
+    if (err.message === 'UNAUTHORIZED') return;
     renderMessage('⚠️ خطأ في الاتصال.', 'assistant');
   } finally {
     isSending = false;
@@ -298,7 +404,7 @@ window.sendMessage = async function() {
   }
 };
 
-// Attach to button (multiple ways for safety)
+// Attach to button
 if (sendBtn) {
   sendBtn.onclick = window.sendMessage;
   sendBtn.addEventListener('click', function(e) { e.preventDefault(); window.sendMessage(); });
@@ -312,6 +418,15 @@ if (messageInput) {
     }
   });
 }
+
+// ============ AUTO REFRESH EVERY 30 MINUTES ============
+// Proactively refresh the token before it expires
+setInterval(async () => {
+  if (getToken() && getRefreshToken()) {
+    console.log('🔄 Proactive token refresh...');
+    await refreshAccessToken();
+  }
+}, 30 * 60 * 1000); // Every 30 minutes
 
 // ============ INIT ============
 checkAuth();
