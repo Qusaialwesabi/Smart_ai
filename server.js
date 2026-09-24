@@ -22,20 +22,18 @@ const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supaba
 if (!supabase) console.warn('⚠️ Supabase not configured.');
 
 // ============================================
-// GEMINI KEYS (Key Rotation)
+// GEMINI KEYS
 // ============================================
 const apiKeys = (process.env.GEMINI_API_KEYS || '')
   .split(',')
   .map(k => k.trim())
   .filter(Boolean);
 
-// Support numbered keys: GEMINI_API_KEY_1, _2, ...
 for (let i = 1; i <= 100; i++) {
   const k = (process.env['GEMINI_API_KEY_' + i] || '').trim();
   if (k) apiKeys.push(k);
 }
 
-// Deduplicate
 const uniqueKeys = [...new Set(apiKeys)];
 
 const keyStates = uniqueKeys.map((key, idx) => ({
@@ -82,75 +80,48 @@ function isServerError(msg) {
 }
 
 // ============================================
-// MODELS (in order of preference)
+// MODEL (only one)
 // ============================================
-const MODELS = [
-  'gemini-3.5-flash-lite',
-  'gemini-2.5-flash-lite',
-  'gemini-flash-latest',
-];
+const MODEL = 'gemini-3.5-flash-lite';
 
 // ============================================
-// GENERATE TEXT (with Key Rotation + Model Fallback)
+// GENERATE TEXT (Key Rotation)
 // ============================================
 async function generateText(contents) {
   if (keyStates.length === 0) throw new Error('No API keys configured.');
 
+  const maxAttempts = keyStates.length + 2;
   let lastError = '';
 
-  for (const modelName of MODELS) {
-    console.log(`🔄 Trying model: ${modelName}`);
-    let modelFound = false;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const state = pickKey();
+    if (!state) throw new Error('ALL_KEYS_EXHAUSTED');
 
-    const maxAttempts = keyStates.length + 2;
+    state.lastUsed = Date.now();
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const state = pickKey();
-      if (!state) {
-        throw new Error('ALL_KEYS_EXHAUSTED');
+    try {
+      const ai = new GoogleGenAI({ apiKey: state.key });
+      const response = await ai.models.generateContent({
+        model: MODEL,
+        contents,
+      });
+
+      state.successCount++;
+      console.log(`✅ Key #${state.idx + 1} succeeded (total: ${state.successCount})`);
+      return response.text || '';
+    } catch (err) {
+      const msg = String(err.message || '');
+      console.error(`❌ Key #${state.idx + 1} error:`, msg.slice(0, 200));
+
+      if (isQuotaError(msg)) {
+        coolDown(state, 60, 'quota/rate limit');
+      } else if (isServerError(msg)) {
+        coolDown(state, 20, 'server error');
+      } else if (msg.includes('400') || msg.includes('not supported') || msg.includes('invalid')) {
+        throw new Error('BAD_REQUEST: ' + msg.slice(0, 200));
+      } else {
+        coolDown(state, 10, msg.slice(0, 80));
       }
-
-      state.lastUsed = Date.now();
-
-      try {
-        const ai = new GoogleGenAI({ apiKey: state.key });
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents,
-        });
-
-        state.successCount++;
-        console.log(`✅ Key #${state.idx + 1} (${modelName}) succeeded (total: ${state.successCount})`);
-        return response.text || '';
-      } catch (err) {
-        const msg = String(err.message || '');
-        console.error(`❌ Key #${state.idx + 1} (${modelName}) error:`, msg.slice(0, 200));
-
-        // Model not found → try next model
-        if (msg.includes('404') || msg.includes('not found') || msg.toLowerCase().includes('is not found')) {
-          lastError = msg;
-          modelFound = false;
-          break; // exit key loop, try next model
-        }
-
-        modelFound = true;
-
-        if (isQuotaError(msg)) {
-          coolDown(state, 60, 'quota/rate limit');
-        } else if (isServerError(msg)) {
-          coolDown(state, 20, 'server error');
-        } else if (msg.includes('400') || msg.includes('not supported') || msg.includes('invalid')) {
-          // Bad request — our fault, don't retry with other keys
-          throw new Error('BAD_REQUEST: ' + msg.slice(0, 200));
-        } else {
-          coolDown(state, 10, msg.slice(0, 80));
-        }
-      }
-    }
-
-    if (!modelFound && lastError) {
-      console.warn(`⚠️ Model "${modelName}" not available, trying next...`);
-      continue;
     }
   }
 
@@ -182,10 +153,9 @@ async function requireAuth(req, res, next) {
 // ============================================
 // ROUTES
 // ============================================
-
 app.get('/ping', (req, res) => res.status(200).send('OK 🚀'));
 
-// ---- AUTH ----
+// AUTH
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: { id: req.user.id, email: req.user.email } });
 });
@@ -210,7 +180,7 @@ app.post('/api/auth/login', async (req, res) => {
   res.json(data);
 });
 
-// ---- CONVERSATIONS ----
+// CONVERSATIONS
 app.get('/api/conversations', requireAuth, async (req, res) => {
   const { data, error } = await supabase
     .from('conversations')
@@ -258,7 +228,7 @@ app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
-// ---- MESSAGES ----
+// MESSAGES
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   const { id } = req.params;
 
@@ -287,7 +257,6 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Message required.' });
   }
 
-  // Verify ownership
   const { data: conv } = await supabase
     .from('conversations')
     .select('id, title')
@@ -296,15 +265,12 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     .single();
   if (!conv) return res.status(404).json({ error: 'Not found.' });
 
-  // Save user message
   const { error: userErr } = await supabase
     .from('messages')
     .insert([{ conversation_id: id, role: 'user', content: content.trim() }]);
   if (userErr) return res.status(500).json({ error: userErr.message });
 
-  // ============================================
-  // Load last 20 messages (NEWEST first, then reverse)
-  // ============================================
+  // Load last 20 messages
   const { data: historyRaw } = await supabase
     .from('messages')
     .select('role, content')
@@ -314,9 +280,6 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 
   const history = (historyRaw || []).reverse();
 
-  // ============================================
-  // Build Gemini contents with strict rules
-  // ============================================
   const contents = [];
   for (const m of history) {
     const role = m.role === 'assistant' ? 'model' : 'user';
@@ -324,19 +287,13 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     contents.push({ role, parts: [{ text: m.content || '' }] });
   }
 
-  while (contents.length > 0 && contents[0].role === 'model') {
-    contents.shift();
-  }
-
-  while (contents.length > 0 && contents[contents.length - 1].role === 'model') {
-    contents.pop();
-  }
+  while (contents.length > 0 && contents[0].role === 'model') contents.shift();
+  while (contents.length > 0 && contents[contents.length - 1].role === 'model') contents.pop();
 
   if (contents.length === 0) {
     contents.push({ role: 'user', parts: [{ text: content.trim() }] });
   }
 
-  // Generate AI reply
   let aiText = '';
   try {
     aiText = await generateText(contents);
@@ -354,14 +311,12 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     }
   }
 
-  // Save AI message
   const { data: aiMsg } = await supabase
     .from('messages')
     .insert([{ conversation_id: id, role: 'assistant', content: aiText }])
     .select()
     .single();
 
-  // Update conversation
   const updates = { updated_at: new Date().toISOString() };
   if (conv.title === 'محادثة جديدة' || conv.title === 'New Chat') {
     updates.title = content.trim().slice(0, 40);
@@ -371,12 +326,12 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   res.json({ aiMessage: aiMsg || { role: 'assistant', content: aiText } });
 });
 
-// ---- KEYS STATUS ----
+// KEYS STATUS
 app.get('/api/keys-status', requireAuth, (req, res) => {
   const now = Date.now();
   res.json({
     total: keyStates.length,
-    models: MODELS,
+    model: MODEL,
     status: keyStates.map(k => ({
       index: k.idx + 1,
       available: k.exhaustedUntil <= now,
@@ -388,12 +343,9 @@ app.get('/api/keys-status', requireAuth, (req, res) => {
   });
 });
 
-// Fallback
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// ============================================
-// SELF-PING (prevents Render sleep)
-// ============================================
+// SELF-PING
 const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL || '';
 
 if (SELF_URL) {
@@ -404,11 +356,11 @@ if (SELF_URL) {
       .catch(e => console.warn('Self-ping failed:', e.message));
   }, 10 * 60 * 1000);
 } else {
-  console.log('ℹ️ Self-ping disabled (no SERVER_URL or RENDER_EXTERNAL_URL).');
+  console.log('ℹ️ Self-ping disabled.');
 }
 
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔑 Keys loaded: ${keyStates.length}`);
-  console.log(`📦 Models: ${MODELS.join(' → ')}`);
+  console.log(`📦 Model: ${MODEL}`);
 });
