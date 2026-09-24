@@ -27,12 +27,8 @@ function getToken() { return localStorage.getItem('supabase_token'); }
 function getRefreshToken() { return localStorage.getItem('supabase_refresh_token'); }
 
 function saveTokens(session) {
-  if (session?.access_token) {
-    localStorage.setItem('supabase_token', session.access_token);
-  }
-  if (session?.refresh_token) {
-    localStorage.setItem('supabase_refresh_token', session.refresh_token);
-  }
+  if (session?.access_token) localStorage.setItem('supabase_token', session.access_token);
+  if (session?.refresh_token) localStorage.setItem('supabase_refresh_token', session.refresh_token);
 }
 
 function clearTokens() {
@@ -45,7 +41,6 @@ function getAuthHeaders() {
   return { 'Content-Type': 'application/json', ...(t ? { 'Authorization': `Bearer ${t}` } : {}) };
 }
 
-// Refresh access token using refresh_token
 async function refreshAccessToken() {
   if (isRefreshing) return false;
   const refreshToken = getRefreshToken();
@@ -65,7 +60,6 @@ async function refreshAccessToken() {
       console.log('✅ Token refreshed');
       return true;
     }
-
     console.warn('❌ Refresh failed:', data.error || res.status);
     return false;
   } catch (e) {
@@ -76,7 +70,6 @@ async function refreshAccessToken() {
   }
 }
 
-// Logout helper
 function forceLogout(message) {
   clearTokens();
   currentConvId = null;
@@ -85,33 +78,21 @@ function forceLogout(message) {
   if (message) alert(message);
 }
 
-// Wrapper: fetch with auto-refresh on 401
 async function authFetch(url, options = {}) {
-  // Ensure headers
-  options.headers = {
-    ...(options.headers || {}),
-    ...getAuthHeaders(),
-  };
-
+  options.headers = { ...(options.headers || {}), ...getAuthHeaders() };
   let res = await fetch(url, options);
 
-  // If 401, try to refresh and retry once
   if (res.status === 401) {
-    console.log('⚠️ 401 detected — refreshing token...');
+    console.log('⚠️ 401 — refreshing token...');
     const refreshed = await refreshAccessToken();
     if (refreshed) {
-      // Retry with new token
-      options.headers = {
-        ...(options.headers || {}),
-        ...getAuthHeaders(),
-      };
+      options.headers = { ...(options.headers || {}), ...getAuthHeaders() };
       res = await fetch(url, options);
     } else {
       forceLogout('انتهت جلستك. يرجى تسجيل الدخول مجدداً.');
       throw new Error('UNAUTHORIZED');
     }
   }
-
   return res;
 }
 
@@ -120,6 +101,97 @@ function escapeHtml(text) {
   const d = document.createElement('div');
   d.textContent = text || '';
   return d.innerHTML;
+}
+
+// ============ CODE COPY BUTTONS ============
+function addCopyButtonsToMessage(msgElement) {
+  const preBlocks = msgElement.querySelectorAll('pre');
+
+  preBlocks.forEach((pre) => {
+    // Skip if already processed
+    if (pre.dataset.copyEnhanced === 'true') return;
+    pre.dataset.copyEnhanced = 'true';
+
+    const codeEl = pre.querySelector('code');
+    if (!codeEl) return;
+
+    // Get language from class (e.g., "language-javascript")
+    let lang = 'code';
+    const codeClasses = codeEl.className || '';
+    const langMatch = codeClasses.match(/language-(\w+)/);
+    if (langMatch) lang = langMatch[1];
+
+    // Get raw code text BEFORE we wrap anything
+    const rawCode = codeEl.textContent || '';
+
+    // Create wrapper structure
+    const header = document.createElement('div');
+    header.className = 'code-block-header';
+
+    const langLabel = document.createElement('span');
+    langLabel.className = 'code-lang';
+    langLabel.textContent = lang;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-code-btn';
+    copyBtn.type = 'button';
+    copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ';
+    copyBtn.setAttribute('aria-label', 'نسخ الكود');
+
+    copyBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        // Try modern clipboard API first
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(rawCode);
+        } else {
+          // Fallback for older browsers / non-HTTPS
+          const textarea = document.createElement('textarea');
+          textarea.value = rawCode;
+          textarea.style.position = 'fixed';
+          textarea.style.left = '-9999px';
+          textarea.style.top = '0';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+        }
+
+        // Visual feedback
+        copyBtn.classList.add('copied');
+        copyBtn.innerHTML = '<i class="fas fa-check"></i> تم النسخ';
+
+        setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ';
+        }, 2000);
+      } catch (err) {
+        console.error('Copy failed:', err);
+        copyBtn.innerHTML = '<i class="fas fa-times"></i> فشل';
+        setTimeout(() => {
+          copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ';
+        }, 2000);
+      }
+    });
+
+    header.appendChild(langLabel);
+    header.appendChild(copyBtn);
+
+    // Create content wrapper
+    const contentWrap = document.createElement('div');
+    contentWrap.className = 'code-block-content';
+
+    // Move code into content wrapper
+    contentWrap.appendChild(codeEl);
+
+    // Clear pre and rebuild
+    pre.innerHTML = '';
+    pre.appendChild(header);
+    pre.appendChild(contentWrap);
+  });
 }
 
 // ============ SIDEBAR ============
@@ -160,7 +232,7 @@ async function checkAuth() {
       forceLogout();
     }
   } catch (e) {
-    // authFetch handles logout on UNAUTHORIZED
+    // authFetch handles logout
   }
 }
 
@@ -211,9 +283,7 @@ if (authPassword) {
 }
 
 if (logoutBtn) {
-  logoutBtn.addEventListener('click', () => {
-    forceLogout();
-  });
+  logoutBtn.addEventListener('click', () => forceLogout());
 }
 
 // ============ CONVERSATIONS ============
@@ -346,8 +416,16 @@ function renderMessage(content, role) {
 
   messagesContainer.appendChild(msgDiv);
 
+  // Highlight code blocks
   if (typeof hljs !== 'undefined') {
-    msgDiv.querySelectorAll('pre code').forEach((b) => { try { hljs.highlightElement(b); } catch (e) {} });
+    msgDiv.querySelectorAll('pre code').forEach((b) => {
+      try { hljs.highlightElement(b); } catch (e) {}
+    });
+  }
+
+  // Add copy buttons (after highlighting so lang class is preserved)
+  if (role === 'assistant') {
+    addCopyButtonsToMessage(msgDiv);
   }
 
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -404,7 +482,6 @@ window.sendMessage = async function() {
   }
 };
 
-// Attach to button
 if (sendBtn) {
   sendBtn.onclick = window.sendMessage;
   sendBtn.addEventListener('click', function(e) { e.preventDefault(); window.sendMessage(); });
@@ -420,13 +497,12 @@ if (messageInput) {
 }
 
 // ============ AUTO REFRESH EVERY 30 MINUTES ============
-// Proactively refresh the token before it expires
 setInterval(async () => {
   if (getToken() && getRefreshToken()) {
     console.log('🔄 Proactive token refresh...');
     await refreshAccessToken();
   }
-}, 30 * 60 * 1000); // Every 30 minutes
+}, 30 * 60 * 1000);
 
 // ============ INIT ============
 checkAuth();
