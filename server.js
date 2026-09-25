@@ -13,6 +13,27 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.static('public'));
 
 // ============================================
+// CONFIG
+// ============================================
+const FREE_DAILY_LIMIT = 7;
+const PAYPAL_CLIENT_ID = (process.env.PAYPAL_CLIENT_ID || '').trim();
+const PAYPAL_CLIENT_SECRET = (process.env.PAYPAL_CLIENT_SECRET || '').trim();
+const PAYPAL_MODE = (process.env.PAYPAL_MODE || 'sandbox').toLowerCase();
+const PAYPAL_API = PAYPAL_MODE === 'live'
+  ? 'https://api-m.paypal.com'
+  : 'https://api-m.sandbox.paypal.com';
+const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
+
+const PRICES = {
+  monthly: { amount: 10, days: 30, label: 'شهري' },
+  yearly: { amount: 110, days: 365, label: 'سنوي' },
+};
+
+console.log(`💳 PayPal mode: ${PAYPAL_MODE.toUpperCase()}`);
+if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) console.warn('⚠️ PayPal credentials missing.');
+if (!APP_URL) console.warn('⚠️ APP_URL missing.');
+
+// ============================================
 // SUPABASE
 // ============================================
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
@@ -62,62 +83,43 @@ function isOverloaded(msg) {
   return m.includes('503') || m.includes('high demand') || m.includes('overloaded') || m.includes('unavailable');
 }
 
-// ============================================
-// MODEL
-// ============================================
 const MODEL = 'gemini-3.5-flash-lite';
 const MAX_ROUNDS = 2;
 
-// ============================================
-// GENERATE TEXT
-// ============================================
 async function generateText(contents) {
   if (keyStates.length === 0) throw new Error('No API keys.');
-
   let lastError = '';
-
   for (let round = 0; round < MAX_ROUNDS; round++) {
     let triedAnyKeyThisRound = false;
-
     for (let k = 0; k < keyStates.length; k++) {
       const state = pickKey();
       if (!state) continue;
-
       triedAnyKeyThisRound = true;
       state.lastUsed = Date.now();
-
       try {
         const ai = new GoogleGenAI({ apiKey: state.key });
         const response = await ai.models.generateContent({ model: MODEL, contents });
         state.successCount++;
         state.consecutive503 = 0;
-        console.log(`✅ Key #${state.idx + 1} (${MODEL}) OK (total: ${state.successCount})`);
+        console.log(`✅ Key #${state.idx + 1} OK (total: ${state.successCount})`);
         return response.text || '';
       } catch (err) {
         const msg = String(err.message || '');
-        console.error(`❌ Key #${state.idx + 1} (${MODEL}):`, msg.slice(0, 150));
+        console.error(`❌ Key #${state.idx + 1}:`, msg.slice(0, 150));
         lastError = msg;
-
-        if (msg.includes('400') || msg.includes('invalid')) {
-          throw new Error('BAD_REQUEST: ' + msg.slice(0, 200));
-        } else if (isQuotaError(msg)) {
-          coolDown(state, 60, 'quota');
-        } else if (isOverloaded(msg)) {
+        if (msg.includes('400') || msg.includes('invalid')) throw new Error('BAD_REQUEST: ' + msg.slice(0, 200));
+        else if (isQuotaError(msg)) coolDown(state, 60, 'quota');
+        else if (isOverloaded(msg)) {
           state.consecutive503++;
           const backoff = Math.min(10 * state.consecutive503, 45);
           coolDown(state, backoff, `google busy x${state.consecutive503}`);
-        } else {
-          coolDown(state, 8, msg.slice(0, 60));
-        }
+        } else coolDown(state, 8, msg.slice(0, 60));
       }
     }
-
     if (!triedAnyKeyThisRound && round < MAX_ROUNDS - 1) {
-      console.log('⏳ All keys cooling down — waiting 5s...');
       await new Promise(r => setTimeout(r, 5000));
     }
   }
-
   throw new Error('GENERATION_FAILED: ' + lastError);
 }
 
@@ -143,13 +145,92 @@ async function requireAuth(req, res, next) {
 }
 
 // ============================================
+// SUBSCRIPTION HELPERS
+// ============================================
+async function getOrCreateProfile(userId, email) {
+  if (!supabase) return null;
+  let { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
+  if (!profile) {
+    const { data: newProfile } = await supabase.from('profiles')
+      .insert([{ id: userId, email, plan: 'free', messages_today: 0, last_reset_at: new Date().toISOString() }])
+      .select().single();
+    profile = newProfile;
+  }
+  return profile;
+}
+
+function shouldResetDaily(profile) {
+  if (!profile.last_reset_at) return true;
+  const hours = (new Date() - new Date(profile.last_reset_at)) / (1000 * 60 * 60);
+  return hours >= 24;
+}
+
+async function checkAndIncrementUsage(user, email) {
+  const profile = await getOrCreateProfile(user.id, email);
+  if (!profile) return { allowed: true, reason: 'no-profile' };
+
+  if (profile.plan === 'premium') {
+    if (profile.subscription_expires_at && new Date(profile.subscription_expires_at) < new Date()) {
+      await supabase.from('profiles')
+        .update({ plan: 'free', messages_today: 0, last_reset_at: new Date().toISOString() })
+        .eq('id', user.id);
+      return { allowed: false, reason: 'expired', remaining: 0, plan: 'free' };
+    }
+    return { allowed: true, reason: 'premium', remaining: -1, plan: 'premium' };
+  }
+
+  let messagesToday = profile.messages_today || 0;
+  let lastResetAt = profile.last_reset_at;
+  if (shouldResetDaily(profile)) {
+    messagesToday = 0;
+    lastResetAt = new Date().toISOString();
+  }
+  if (messagesToday >= FREE_DAILY_LIMIT) {
+    return { allowed: false, reason: 'limit', remaining: 0, plan: 'free', limit: FREE_DAILY_LIMIT };
+  }
+  await supabase.from('profiles')
+    .update({ messages_today: messagesToday + 1, last_reset_at: lastResetAt })
+    .eq('id', user.id);
+  return { allowed: true, reason: 'free', remaining: FREE_DAILY_LIMIT - messagesToday - 1, plan: 'free', limit: FREE_DAILY_LIMIT };
+}
+
+// ============================================
+// PAYPAL HELPERS
+// ============================================
+async function getPayPalAccessToken() {
+  if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) throw new Error('PayPal not configured.');
+  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
+  const res = await fetch(`${PAYPAL_API}/v1/oauth2/token`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'grant_type=client_credentials',
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('PayPal token error:', err.slice(0, 300));
+    throw new Error('PayPal auth failed.');
+  }
+  return (await res.json()).access_token;
+}
+
+// ============================================
 // ROUTES
 // ============================================
 app.get('/ping', (req, res) => res.status(200).send('OK 🚀'));
 
-// --- AUTH ---
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json({ user: { id: req.user.id, email: req.user.email } });
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+  const profile = await getOrCreateProfile(req.user.id, req.user.email);
+  res.json({
+    user: { id: req.user.id, email: req.user.email },
+    profile: profile ? {
+      plan: profile.plan || 'free',
+      messages_today: profile.messages_today || 0,
+      subscription_expires_at: profile.subscription_expires_at,
+    } : null,
+  });
 });
 
 app.post('/api/auth/signup', async (req, res) => {
@@ -170,27 +251,160 @@ app.post('/api/auth/login', async (req, res) => {
   res.json(data);
 });
 
-// ============================================
-// REFRESH TOKEN (new)
-// ============================================
 app.post('/api/auth/refresh', async (req, res) => {
   if (!supabase) return res.status(500).json({ error: 'Supabase not configured.' });
   const { refresh_token } = req.body;
   if (!refresh_token) return res.status(400).json({ error: 'refresh_token required.' });
-
   try {
     const { data, error } = await supabase.auth.refreshSession({ refresh_token });
     if (error) return res.status(401).json({ error: error.message });
     res.json(data);
   } catch (err) {
-    console.error('Refresh error:', err.message);
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
 
-// ============================================
-// CONVERSATIONS
-// ============================================
+app.get('/api/subscription/status', requireAuth, async (req, res) => {
+  const profile = await getOrCreateProfile(req.user.id, req.user.email);
+  if (!profile) return res.status(500).json({ error: 'Profile error.' });
+
+  let messagesToday = profile.messages_today || 0;
+  if (shouldResetDaily(profile)) messagesToday = 0;
+
+  const isPremium = profile.plan === 'premium' &&
+    (!profile.subscription_expires_at || new Date(profile.subscription_expires_at) > new Date());
+
+  res.json({
+    plan: isPremium ? 'premium' : 'free',
+    isPremium,
+    messagesToday,
+    remaining: isPremium ? -1 : Math.max(0, FREE_DAILY_LIMIT - messagesToday),
+    limit: FREE_DAILY_LIMIT,
+    expiresAt: profile.subscription_expires_at || null,
+    prices: {
+      monthly: PRICES.monthly.amount,
+      yearly: PRICES.yearly.amount,
+    },
+  });
+});
+
+app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
+  try {
+    const { plan } = req.body;
+    if (!plan || !PRICES[plan]) return res.status(400).json({ error: 'Invalid plan.' });
+
+    const priceData = PRICES[plan];
+    const accessToken = await getPayPalAccessToken();
+
+    const orderRes = await fetch(`${PAYPAL_API}/v2/checkout/orders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        intent: 'CAPTURE',
+        purchase_units: [{
+          amount: { currency_code: 'USD', value: priceData.amount.toFixed(2) },
+          description: `Smart AI Premium - ${priceData.label}`,
+          custom_id: `${req.user.id}|${plan}`,
+        }],
+        application_context: {
+          brand_name: 'Smart AI',
+          user_action: 'PAY_NOW',
+          return_url: `${APP_URL}/?payment=success`,
+          cancel_url: `${APP_URL}/?payment=cancel`,
+        },
+      }),
+    });
+
+    if (!orderRes.ok) {
+      const err = await orderRes.text();
+      console.error('PayPal create order error:', err.slice(0, 300));
+      return res.status(500).json({ error: 'فشل إنشاء الطلب.' });
+    }
+
+    const order = await orderRes.json();
+    const approvalLink = order.links?.find(l => l.rel === 'approve')?.href;
+    if (!approvalLink) return res.status(500).json({ error: 'No approval link.' });
+
+    console.log(`💳 Order: ${order.id} | User: ${req.user.id} | Plan: ${plan}`);
+    res.json({ orderId: order.id, approvalUrl: approvalLink });
+  } catch (err) {
+    console.error('Create order error:', err.message);
+    res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
+
+app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
+  try {
+    const { orderId, plan } = req.body;
+    if (!orderId || !plan || !PRICES[plan]) return res.status(400).json({ error: 'Invalid request.' });
+
+    const accessToken = await getPayPalAccessToken();
+
+    const captureRes = await fetch(`${PAYPAL_API}/v2/checkout/orders/${orderId}/capture`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!captureRes.ok) {
+      const err = await captureRes.text();
+      console.error('PayPal capture error:', err.slice(0, 300));
+      return res.status(500).json({ error: 'فشل تأكيد الدفع.' });
+    }
+
+    const captureData = await captureRes.json();
+    if (captureData.status !== 'COMPLETED') return res.status(400).json({ error: 'لم يتم إكمال الدفع.' });
+
+    const capture = captureData.purchase_units?.[0]?.payments?.captures?.[0];
+    const captureId = capture?.id;
+    const payerId = captureData.payer?.payer_id;
+
+    const days = PRICES[plan].days;
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + days);
+
+    const { error: updateErr } = await supabase.from('profiles')
+      .update({
+        plan: 'premium',
+        subscription_plan: plan,
+        subscription_started_at: new Date().toISOString(),
+        subscription_expires_at: expiresAt.toISOString(),
+        paypal_order_id: orderId,
+        paypal_payer_id: payerId,
+      })
+      .eq('id', req.user.id);
+
+    if (updateErr) console.error('Upgrade error:', updateErr.message);
+
+    await supabase.from('payments').insert([{
+      user_id: req.user.id,
+      paypal_order_id: orderId,
+      paypal_capture_id: captureId,
+      amount: PRICES[plan].amount,
+      currency: 'USD',
+      plan,
+      status: 'completed',
+    }]);
+
+    console.log(`✅ Payment success! User: ${req.user.id} | Plan: ${plan} | Order: ${orderId}`);
+
+    res.json({
+      success: true,
+      plan: 'premium',
+      subscriptionPlan: plan,
+      expiresAt: expiresAt.toISOString(),
+    });
+  } catch (err) {
+    console.error('Capture error:', err.message);
+    res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
+
 app.get('/api/conversations', requireAuth, async (req, res) => {
   const { data, error } = await supabase.from('conversations')
     .select('id, title, created_at, updated_at')
@@ -229,9 +443,6 @@ app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
-// ============================================
-// MESSAGES
-// ============================================
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { data: conv } = await supabase.from('conversations')
@@ -251,6 +462,19 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   const { content } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'Message required.' });
 
+  const usage = await checkAndIncrementUsage(req.user, req.user.email);
+  if (!usage.allowed) {
+    return res.status(429).json({
+      error: 'LIMIT_REACHED',
+      message: usage.reason === 'expired'
+        ? 'انتهى اشتراكك. جدّد للاستمرار.'
+        : `انتهت رسائلك المجانية لهذا اليوم (${FREE_DAILY_LIMIT} رسائل).`,
+      reason: usage.reason,
+      remaining: usage.remaining,
+      plan: usage.plan,
+    });
+  }
+
   const { data: conv } = await supabase.from('conversations')
     .select('id, title').eq('id', id).eq('user_id', req.user.id).single();
   if (!conv) return res.status(404).json({ error: 'Not found.' });
@@ -259,14 +483,12 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
     .insert([{ conversation_id: id, role: 'user', content: content.trim() }]);
   if (userErr) return res.status(500).json({ error: userErr.message });
 
-  // Load last 20 messages
   const { data: historyRaw } = await supabase.from('messages')
     .select('role, content').eq('conversation_id', id)
     .order('created_at', { ascending: false }).limit(20);
 
   const history = (historyRaw || []).reverse();
 
-  // Build contents: alternate roles, start & end with user
   const contents = [];
   for (const m of history) {
     const role = m.role === 'assistant' ? 'model' : 'user';
@@ -288,7 +510,7 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Generate error:', err.message);
     if (err.message.startsWith('BAD_REQUEST')) aiText = '⚠️ خطأ في صيغة الطلب.';
-    else if (err.message.startsWith('GENERATION_FAILED')) aiText = '⚠️ الموديل مزدحم حالياً من طرف Google. حاول بعد قليل.';
+    else if (err.message.startsWith('GENERATION_FAILED')) aiText = '⚠️ الموديل مزدحم. حاول بعد قليل.';
     else aiText = '⚠️ حدث خطأ. حاول لاحقاً.';
   }
 
@@ -302,12 +524,12 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   }
   await supabase.from('conversations').update(updates).eq('id', id);
 
-  res.json({ aiMessage: aiMsg || { role: 'assistant', content: aiText } });
+  res.json({
+    aiMessage: aiMsg || { role: 'assistant', content: aiText },
+    usage: { plan: usage.plan, remaining: usage.remaining, limit: usage.limit },
+  });
 });
 
-// ============================================
-// KEYS STATUS
-// ============================================
 app.get('/api/keys-status', requireAuth, (req, res) => {
   const now = Date.now();
   res.json({
@@ -325,23 +547,20 @@ app.get('/api/keys-status', requireAuth, (req, res) => {
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// ============================================
-// SELF-PING
-// ============================================
 const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL || '';
 if (SELF_URL) {
-  console.log(`🔁 Self-ping enabled: ${SELF_URL}/ping every 10 minutes`);
+  console.log(`🔁 Self-ping enabled every 10 min`);
   setInterval(() => {
     fetch(`${SELF_URL}/ping`)
       .then(r => console.log(`💓 Self-ping OK (${r.status})`))
       .catch(e => console.warn('Self-ping failed:', e.message));
   }, 10 * 60 * 1000);
-} else {
-  console.warn('⚠️ Self-ping disabled — set RENDER_EXTERNAL_URL or SERVER_URL.');
 }
 
 app.listen(PORT, () => {
   console.log(`✅ Server on port ${PORT}`);
   console.log(`🔑 Keys: ${keyStates.length}`);
   console.log(`📦 Model: ${MODEL}`);
+  console.log(`💳 PayPal: ${PAYPAL_MODE}`);
+  console.log(`💵 Monthly: $${PRICES.monthly.amount} | Yearly: $${PRICES.yearly.amount}`);
 });
