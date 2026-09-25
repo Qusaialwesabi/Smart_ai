@@ -87,7 +87,7 @@ function escapeHtml(text) {
   return d.innerHTML;
 }
 
-// UPDATE USAGE BADGE UI
+// UPDATE USAGE BADGE UI (تم تعديل شكل العرض هنا ليكون واضحاً)
 function updateUsageUI(usage) {
   const badge = document.getElementById('usage-badge');
   if (!badge || !usage) return;
@@ -98,7 +98,7 @@ function updateUsageUI(usage) {
     const rem = usage.remaining !== undefined ? usage.remaining : 7;
     const limit = usage.limit || 7;
     badge.className = rem <= 1 ? 'usage-badge low' : 'usage-badge';
-    badge.innerHTML = `<i class="fas fa-bolt"></i> متبقي: ${rem} / ${limit}`;
+    badge.innerHTML = `<i class="fas fa-bolt"></i> متبقي: ${rem} من ${limit}`;
   }
 }
 
@@ -421,7 +421,6 @@ async function sendMessage() {
     const data = await res.json();
 
     if (res.status === 429) {
-      // انتهت الرسائل المجانية
       openSubModal(data.message || 'انتهت رسائلك المجانية لهذا اليوم.');
       updateUsageUI({ plan: 'free', remaining: 0, limit: 7 });
       return;
@@ -492,17 +491,13 @@ async function selectPlan(plan) {
   }
 }
 
-// CHECK PAYPAL RETURN AFTER REDIRECT
 async function checkPaymentReturn() {
   const urlParams = new URLSearchParams(window.location.search);
   const paymentStatus = urlParams.get('payment');
-  const token = urlParams.get('token'); // PayPal order token
+  const token = urlParams.get('token');
 
   if (paymentStatus === 'success' && token) {
-    // إزالة البارامترات من الرابط
     window.history.replaceState({}, document.title, window.location.pathname);
-    // نقوم بالتحقق وتأكيد الطلب
-    // (بما أن الكود الحالي في السيرفر يلتقط الدفع عبر الدخول أو يمكن تمرير الـ plan المخزن مؤقتاً أو التقاطه تلقائياً)
     alert('تم الدفع بنجاح! يتم تفعيل اشتراكك...');
     loadSubscriptionStatus();
   } else if (paymentStatus === 'cancel') {
