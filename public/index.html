@@ -16,34 +16,19 @@
 </head>
 <body>
 
-  <!-- ============ AUTH SCREEN ============ -->
   <div id="auth-screen" class="auth-container">
     <div class="auth-box">
       <h2 id="auth-title">تسجيل الدخول</h2>
-      <input
-        type="email"
-        id="auth-email"
-        placeholder="البريد الإلكتروني"
-        autocomplete="email"
-        inputmode="email">
-      <input
-        type="password"
-        id="auth-password"
-        placeholder="كلمة السر"
-        autocomplete="current-password"
-        minlength="6">
+      <input type="email" id="auth-email" placeholder="البريد الإلكتروني" autocomplete="email" inputmode="email">
+      <input type="password" id="auth-password" placeholder="كلمة السر" autocomplete="current-password" minlength="6">
       <button id="auth-submit-btn" type="button">دخول</button>
       <p id="auth-toggle-btn">ليس لديك حساب؟ إنشاء حساب جديد</p>
     </div>
   </div>
 
-  <!-- ============ MAIN APP ============ -->
   <div id="app-container" class="app-container" style="display: none;">
-
-    <!-- Sidebar Overlay -->
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-    <!-- Sidebar -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
         <button id="new-chat-btn" type="button">
@@ -58,7 +43,6 @@
       </div>
     </aside>
 
-    <!-- Chat Area -->
     <main class="chat-area">
       <header class="chat-header">
         <button id="toggle-sidebar" type="button" aria-label="القائمة">
@@ -70,22 +54,74 @@
       <div id="messages-container" class="messages-container"></div>
 
       <div class="input-area">
-        <input
-          type="text"
-          id="message-input"
-          placeholder="اكتب رسالتك هنا..."
-          autocomplete="off"
-          enterkeyhint="send">
-        <button
-          id="send-btn"
-          type="button"
-          aria-label="إرسال"
-          onclick="window.sendMessage && window.sendMessage()">
+        <input type="text" id="message-input" placeholder="اكتب رسالتك هنا..." autocomplete="off" enterkeyhint="send">
+        <button id="send-btn" type="button" aria-label="إرسال" onclick="window.sendMessage && window.sendMessage()">
           <i class="fas fa-paper-plane"></i>
         </button>
       </div>
     </main>
+  </div>
 
+  <div id="sub-modal" class="sub-modal-overlay">
+    <div class="sub-modal">
+      <button class="sub-modal-close" onclick="closeSubModal()" aria-label="إغلاق">
+        <i class="fas fa-times"></i>
+      </button>
+
+      <div class="sub-modal-icon">
+        <i class="fas fa-crown"></i>
+      </div>
+
+      <h2 class="sub-modal-title">ترقّى إلى Premium</h2>
+      <p class="sub-modal-subtitle" id="sub-limit-msg">
+        انتهت رسائلك المجانية لهذا اليوم
+      </p>
+
+      <div class="sub-plans">
+        <div class="sub-plan" data-plan="monthly">
+          <div class="sub-plan-head">
+            <span class="sub-plan-name">شهري</span>
+            <span class="sub-plan-badge">الأكثر شيوعاً</span>
+          </div>
+          <div class="sub-plan-price">
+            <span class="sub-price-amount">$10</span>
+            <span class="sub-price-period">/شهر</span>
+          </div>
+          <ul class="sub-features">
+            <li><i class="fas fa-check"></i> رسائل غير محدودة</li>
+            <li><i class="fas fa-check"></i> ردود أسرع</li>
+            <li><i class="fas fa-check"></i> دعم كامل</li>
+          </ul>
+          <button class="sub-plan-btn" type="button" onclick="selectPlan('monthly')">
+            اشترك الآن
+          </button>
+        </div>
+
+        <div class="sub-plan sub-plan-best" data-plan="yearly">
+          <div class="sub-plan-head">
+            <span class="sub-plan-name">سنوي</span>
+            <span class="sub-plan-badge sub-plan-badge-save">وفّر $10</span>
+          </div>
+          <div class="sub-plan-price">
+            <span class="sub-price-amount">$110</span>
+            <span class="sub-price-period">/سنة</span>
+          </div>
+          <ul class="sub-features">
+            <li><i class="fas fa-check"></i> كل ميزات الشهري</li>
+            <li><i class="fas fa-check"></i> وفر شهراً كاملاً</li>
+            <li><i class="fas fa-check"></i> أولوية في الدعم</li>
+          </ul>
+          <button class="sub-plan-btn sub-plan-btn-best" type="button" onclick="selectPlan('yearly')">
+            اشترك الآن
+          </button>
+        </div>
+      </div>
+
+      <div class="sub-payment-info">
+        <p><i class="fas fa-shield-alt"></i> دفع آمن عبر PayPal</p>
+        <p class="sub-note">اختر باقة واضغط اشترك — سيتم تفعيل اشتراكك تلقائياً بعد إتمام الدفع.</p>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>
