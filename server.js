@@ -34,29 +34,13 @@ if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) console.warn('⚠️ PayPal cred
 if (!APP_URL) console.warn('⚠️ APP_URL missing.');
 
 // ============================================
-// SUPABASE (2 clients: anon + service_role)
+// SUPABASE
 // ============================================
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '').trim();
-const supabaseServiceKey = (process.env.SUPABASE_SERVICE_KEY || '').trim();
+const supabaseKey = (process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '').trim();
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-// Anon client — for auth (respects user session)
-const supabase = (supabaseUrl && supabaseAnonKey)
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
-
-// Service role client — bypasses RLS, for admin DB operations
-const supabaseAdmin = (supabaseUrl && supabaseServiceKey)
-  ? createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    })
-  : null;
-
-if (!supabase) console.warn('⚠️ Supabase (anon) not configured.');
-if (!supabaseAdmin) console.warn('⚠️ Supabase (service_role) not configured — message counting may fail!');
-
-// Preferred client for DB writes
-function db() { return supabaseAdmin || supabase; }
+if (!supabase) console.warn('⚠️ Supabase not configured.');
 
 // ============================================
 // GEMINI KEYS
@@ -164,28 +148,15 @@ async function requireAuth(req, res, next) {
 // SUBSCRIPTION HELPERS
 // ============================================
 async function getOrCreateProfile(userId, email) {
-  const client = db();
-  if (!client) return null;
-
-  const { data: profile } = await client.from('profiles').select('*').eq('id', userId).single();
-  if (profile) return profile;
-
-  const { data: newProfile, error } = await client.from('profiles')
-    .insert([{
-      id: userId,
-      email: email,
-      plan: 'free',
-      messages_today: 0,
-      last_reset_at: new Date().toISOString(),
-    }])
-    .select()
-    .single();
-
-  if (error) {
-    console.error('❌ Profile create error:', error.message);
-    return null;
+  if (!supabase) return null;
+  let { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
+  if (!profile) {
+    const { data: newProfile } = await supabase.from('profiles')
+      .insert([{ id: userId, email, plan: 'free', messages_today: 0, last_reset_at: new Date().toISOString() }])
+      .select().single();
+    profile = newProfile;
   }
-  return newProfile;
+  return profile;
 }
 
 function shouldResetDaily(profile) {
@@ -195,16 +166,12 @@ function shouldResetDaily(profile) {
 }
 
 async function checkAndIncrementUsage(user, email) {
-  const client = db();
-  if (!client) return { allowed: true, reason: 'no-client' };
-
   const profile = await getOrCreateProfile(user.id, email);
   if (!profile) return { allowed: true, reason: 'no-profile' };
 
-  // Premium = unlimited
   if (profile.plan === 'premium') {
     if (profile.subscription_expires_at && new Date(profile.subscription_expires_at) < new Date()) {
-      await client.from('profiles')
+      await supabase.from('profiles')
         .update({ plan: 'free', messages_today: 0, last_reset_at: new Date().toISOString() })
         .eq('id', user.id);
       return { allowed: false, reason: 'expired', remaining: 0, plan: 'free' };
@@ -212,42 +179,29 @@ async function checkAndIncrementUsage(user, email) {
     return { allowed: true, reason: 'premium', remaining: -1, plan: 'premium' };
   }
 
-  // Free tier
   let messagesToday = profile.messages_today || 0;
   let lastResetAt = profile.last_reset_at;
-
+  
   if (shouldResetDaily(profile)) {
     messagesToday = 0;
     lastResetAt = new Date().toISOString();
   }
 
   if (messagesToday >= FREE_DAILY_LIMIT) {
-    return {
-      allowed: false,
-      reason: 'limit',
-      remaining: 0,
-      plan: 'free',
-      limit: FREE_DAILY_LIMIT,
-    };
+    return { allowed: false, reason: 'limit', remaining: 0, plan: 'free', limit: FREE_DAILY_LIMIT };
   }
 
-  const newCount = messagesToday + 1;
-  const { error: updateErr } = await client.from('profiles')
-    .update({ messages_today: newCount, last_reset_at: lastResetAt })
+  const newMessagesToday = messagesToday + 1;
+  await supabase.from('profiles')
+    .update({ messages_today: newMessagesToday, last_reset_at: lastResetAt })
     .eq('id', user.id);
 
-  if (updateErr) {
-    console.error('❌ Failed to update messages_today:', updateErr.message);
-  } else {
-    console.log(`📊 ${email}: ${newCount}/${FREE_DAILY_LIMIT}`);
-  }
-
-  return {
-    allowed: true,
-    reason: 'free',
-    remaining: FREE_DAILY_LIMIT - newCount,
-    plan: 'free',
+  return { 
+    allowed: true, 
+    reason: 'free', 
+    remaining: Math.max(0, FREE_DAILY_LIMIT - newMessagesToday), 
     limit: FREE_DAILY_LIMIT,
+    plan: 'free' 
   };
 }
 
@@ -280,11 +234,17 @@ app.get('/ping', (req, res) => res.status(200).send('OK 🚀'));
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
   const profile = await getOrCreateProfile(req.user.id, req.user.email);
+  
+  let messagesToday = profile?.messages_today || 0;
+  if (profile && shouldResetDaily(profile)) messagesToday = 0;
+
   res.json({
     user: { id: req.user.id, email: req.user.email },
     profile: profile ? {
       plan: profile.plan || 'free',
-      messages_today: profile.messages_today || 0,
+      messages_today: messagesToday,
+      remaining: profile.plan === 'premium' ? -1 : Math.max(0, FREE_DAILY_LIMIT - messagesToday),
+      limit: FREE_DAILY_LIMIT,
       subscription_expires_at: profile.subscription_expires_at,
     } : null,
   });
@@ -321,23 +281,12 @@ app.post('/api/auth/refresh', async (req, res) => {
   }
 });
 
-// SUBSCRIPTION STATUS
 app.get('/api/subscription/status', requireAuth, async (req, res) => {
-  const client = db();
-  if (!client) return res.status(500).json({ error: 'Supabase not configured.' });
-
   const profile = await getOrCreateProfile(req.user.id, req.user.email);
   if (!profile) return res.status(500).json({ error: 'Profile error.' });
 
   let messagesToday = profile.messages_today || 0;
-
-  // Reset in DB if 24h passed
-  if (shouldResetDaily(profile)) {
-    messagesToday = 0;
-    await client.from('profiles')
-      .update({ messages_today: 0, last_reset_at: new Date().toISOString() })
-      .eq('id', req.user.id);
-  }
+  if (shouldResetDaily(profile)) messagesToday = 0;
 
   const isPremium = profile.plan === 'premium' &&
     (!profile.subscription_expires_at || new Date(profile.subscription_expires_at) > new Date());
@@ -356,7 +305,6 @@ app.get('/api/subscription/status', requireAuth, async (req, res) => {
   });
 });
 
-// PAYPAL: CREATE ORDER
 app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
   try {
     const { plan } = req.body;
@@ -405,7 +353,6 @@ app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
   }
 });
 
-// PAYPAL: CAPTURE ORDER
 app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
   try {
     const { orderId, plan } = req.body;
@@ -438,8 +385,7 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + days);
 
-    const client = db();
-    const { error: updateErr } = await client.from('profiles')
+    const { error: updateErr } = await supabase.from('profiles')
       .update({
         plan: 'premium',
         subscription_plan: plan,
@@ -452,7 +398,7 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
 
     if (updateErr) console.error('Upgrade error:', updateErr.message);
 
-    await client.from('payments').insert([{
+    await supabase.from('payments').insert([{
       user_id: req.user.id,
       paypal_order_id: orderId,
       paypal_capture_id: captureId,
@@ -476,7 +422,6 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
   }
 });
 
-// CONVERSATIONS
 app.get('/api/conversations', requireAuth, async (req, res) => {
   const { data, error } = await supabase.from('conversations')
     .select('id, title, created_at, updated_at')
@@ -515,7 +460,6 @@ app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
-// MESSAGES
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { data: conv } = await supabase.from('conversations')
@@ -599,11 +543,10 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 
   res.json({
     aiMessage: aiMsg || { role: 'assistant', content: aiText },
-    usage: { plan: usage.plan, remaining: usage.remaining, limit: usage.limit },
+    usage: { plan: usage.plan, remaining: usage.remaining, limit: usage.limit || FREE_DAILY_LIMIT },
   });
 });
 
-// KEYS STATUS
 app.get('/api/keys-status', requireAuth, (req, res) => {
   const now = Date.now();
   res.json({
@@ -621,7 +564,6 @@ app.get('/api/keys-status', requireAuth, (req, res) => {
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// SELF-PING
 const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL || '';
 if (SELF_URL) {
   console.log(`🔁 Self-ping enabled every 10 min`);
@@ -638,5 +580,4 @@ app.listen(PORT, () => {
   console.log(`📦 Model: ${MODEL}`);
   console.log(`💳 PayPal: ${PAYPAL_MODE}`);
   console.log(`💵 Monthly: $${PRICES.monthly.amount} | Yearly: $${PRICES.yearly.amount}`);
-  console.log(`🗄️  DB: ${supabaseAdmin ? 'service_role ✅' : 'anon only ⚠️'}`);
 });
