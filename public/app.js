@@ -1,10 +1,10 @@
-// ============ STATE ============
+// STATE
 let currentConvId = null;
 let isSignUp = false;
 let isSending = false;
 let isRefreshing = false;
 
-// ============ ELEMENTS ============
+// ELEMENTS
 const authScreen = document.getElementById('auth-screen');
 const appContainer = document.getElementById('app-container');
 const authTitle = document.getElementById('auth-title');
@@ -22,20 +22,17 @@ const toggleSidebar = document.getElementById('toggle-sidebar');
 const sidebar = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebar-overlay');
 
-// ============ TOKEN MANAGEMENT ============
+// TOKEN
 function getToken() { return localStorage.getItem('supabase_token'); }
 function getRefreshToken() { return localStorage.getItem('supabase_refresh_token'); }
-
 function saveTokens(session) {
   if (session?.access_token) localStorage.setItem('supabase_token', session.access_token);
   if (session?.refresh_token) localStorage.setItem('supabase_refresh_token', session.refresh_token);
 }
-
 function clearTokens() {
   localStorage.removeItem('supabase_token');
   localStorage.removeItem('supabase_refresh_token');
 }
-
 function getAuthHeaders() {
   const t = getToken();
   return { 'Content-Type': 'application/json', ...(t ? { 'Authorization': `Bearer ${t}` } : {}) };
@@ -43,88 +40,65 @@ function getAuthHeaders() {
 
 async function refreshAccessToken() {
   if (isRefreshing) return false;
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
-
+  const rt = getRefreshToken();
+  if (!rt) return false;
   isRefreshing = true;
   try {
     const res = await fetch('/api/auth/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({ refresh_token: rt }),
     });
     const data = await res.json();
-
-    if (res.ok && data.session?.access_token) {
-      saveTokens(data.session);
-      console.log('✅ Token refreshed');
-      return true;
-    }
-    console.warn('❌ Refresh failed:', data.error || res.status);
+    if (res.ok && data.session?.access_token) { saveTokens(data.session); return true; }
     return false;
-  } catch (e) {
-    console.error('Refresh error:', e);
-    return false;
-  } finally {
-    isRefreshing = false;
-  }
+  } catch { return false; }
+  finally { isRefreshing = false; }
 }
 
-function forceLogout(message) {
+function forceLogout(msg) {
   clearTokens();
   currentConvId = null;
   closeSidebar();
   showAuth();
-  if (message) alert(message);
+  if (msg) alert(msg);
 }
 
 async function authFetch(url, options = {}) {
   options.headers = { ...(options.headers || {}), ...getAuthHeaders() };
   let res = await fetch(url, options);
-
   if (res.status === 401) {
-    console.log('⚠️ 401 — refreshing token...');
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
+    const ok = await refreshAccessToken();
+    if (ok) {
       options.headers = { ...(options.headers || {}), ...getAuthHeaders() };
       res = await fetch(url, options);
     } else {
-      forceLogout('انتهت جلستك. يرجى تسجيل الدخول مجدداً.');
+      forceLogout('انتهت جلستك.');
       throw new Error('UNAUTHORIZED');
     }
   }
   return res;
 }
 
-// ============ HELPERS ============
+// HELPERS
 function escapeHtml(text) {
   const d = document.createElement('div');
   d.textContent = text || '';
   return d.innerHTML;
 }
 
-// ============ CODE COPY BUTTONS ============
-function addCopyButtonsToMessage(msgElement) {
-  const preBlocks = msgElement.querySelectorAll('pre');
-
-  preBlocks.forEach((pre) => {
-    // Skip if already processed
+// CODE COPY
+function addCopyButtonsToMessage(msgEl) {
+  msgEl.querySelectorAll('pre').forEach((pre) => {
     if (pre.dataset.copyEnhanced === 'true') return;
     pre.dataset.copyEnhanced = 'true';
-
     const codeEl = pre.querySelector('code');
     if (!codeEl) return;
-
-    // Get language from class (e.g., "language-javascript")
     let lang = 'code';
-    const codeClasses = codeEl.className || '';
-    const langMatch = codeClasses.match(/language-(\w+)/);
-    if (langMatch) lang = langMatch[1];
-
-    // Get raw code text BEFORE we wrap anything
+    const m = (codeEl.className || '').match(/language-(\w+)/);
+    if (m) lang = m[1];
     const rawCode = codeEl.textContent || '';
 
-    // Create wrapper structure
     const header = document.createElement('div');
     header.className = 'code-block-header';
 
@@ -136,40 +110,31 @@ function addCopyButtonsToMessage(msgElement) {
     copyBtn.className = 'copy-code-btn';
     copyBtn.type = 'button';
     copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ';
-    copyBtn.setAttribute('aria-label', 'نسخ الكود');
 
     copyBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
-
       try {
-        // Try modern clipboard API first
         if (navigator.clipboard && window.isSecureContext) {
           await navigator.clipboard.writeText(rawCode);
         } else {
-          // Fallback for older browsers / non-HTTPS
-          const textarea = document.createElement('textarea');
-          textarea.value = rawCode;
-          textarea.style.position = 'fixed';
-          textarea.style.left = '-9999px';
-          textarea.style.top = '0';
-          document.body.appendChild(textarea);
-          textarea.focus();
-          textarea.select();
+          const ta = document.createElement('textarea');
+          ta.value = rawCode;
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
           document.execCommand('copy');
-          document.body.removeChild(textarea);
+          document.body.removeChild(ta);
         }
-
-        // Visual feedback
         copyBtn.classList.add('copied');
         copyBtn.innerHTML = '<i class="fas fa-check"></i> تم النسخ';
-
         setTimeout(() => {
           copyBtn.classList.remove('copied');
           copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ';
         }, 2000);
       } catch (err) {
-        console.error('Copy failed:', err);
         copyBtn.innerHTML = '<i class="fas fa-times"></i> فشل';
         setTimeout(() => {
           copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ';
@@ -180,21 +145,17 @@ function addCopyButtonsToMessage(msgElement) {
     header.appendChild(langLabel);
     header.appendChild(copyBtn);
 
-    // Create content wrapper
-    const contentWrap = document.createElement('div');
-    contentWrap.className = 'code-block-content';
+    const wrap = document.createElement('div');
+    wrap.className = 'code-block-content';
+    wrap.appendChild(codeEl);
 
-    // Move code into content wrapper
-    contentWrap.appendChild(codeEl);
-
-    // Clear pre and rebuild
     pre.innerHTML = '';
     pre.appendChild(header);
-    pre.appendChild(contentWrap);
+    pre.appendChild(wrap);
   });
 }
 
-// ============ SIDEBAR ============
+// SIDEBAR
 function openSidebar() {
   if (sidebar) sidebar.classList.add('open');
   if (sidebarOverlay) sidebarOverlay.classList.add('show');
@@ -203,13 +164,12 @@ function closeSidebar() {
   if (sidebar) sidebar.classList.remove('open');
   if (sidebarOverlay) sidebarOverlay.classList.remove('show');
 }
-
 if (toggleSidebar) toggleSidebar.addEventListener('click', () => {
   sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
 });
 if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
 
-// ============ AUTH ============
+// AUTH
 if (authToggleBtn) {
   authToggleBtn.addEventListener('click', () => {
     isSignUp = !isSignUp;
@@ -228,12 +188,11 @@ async function checkAuth() {
     if (res.ok) {
       showApp();
       loadConversations();
+      loadSubscriptionStatus();
     } else {
       forceLogout();
     }
-  } catch (e) {
-    // authFetch handles logout
-  }
+  } catch (e) {}
 }
 
 if (authSubmitBtn) {
@@ -259,6 +218,7 @@ if (authSubmitBtn) {
         saveTokens(data.session);
         showApp();
         loadConversations();
+        loadSubscriptionStatus();
       } else if (res.ok && isSignUp) {
         alert('تم إنشاء الحساب! قم بتسجيل الدخول.');
         isSignUp = false;
@@ -282,19 +242,15 @@ if (authPassword) {
   });
 }
 
-if (logoutBtn) {
-  logoutBtn.addEventListener('click', () => forceLogout());
-}
+if (logoutBtn) logoutBtn.addEventListener('click', () => forceLogout());
 
-// ============ CONVERSATIONS ============
+// CONVERSATIONS
 async function loadConversations() {
   try {
     const res = await authFetch('/api/conversations');
     if (!res.ok) return;
-
     const data = await res.json();
     conversationsList.innerHTML = '';
-
     if (data.conversations?.length > 0) {
       data.conversations.forEach((c) => renderConvItem(c));
       if (!currentConvId || !data.conversations.find((c) => c.id === currentConvId)) {
@@ -340,9 +296,7 @@ async function createNewConv() {
       messagesContainer.innerHTML = '';
       return currentConvId;
     }
-  } catch (e) {
-    if (e.message !== 'UNAUTHORIZED') console.error(e);
-  }
+  } catch (e) {}
   return null;
 }
 
@@ -361,17 +315,15 @@ async function selectConv(id) {
 }
 
 async function editConv(id, oldTitle) {
-  const newTitle = prompt('الاسم الجديد:', oldTitle);
-  if (!newTitle?.trim() || newTitle === oldTitle) return;
+  const t = prompt('الاسم الجديد:', oldTitle);
+  if (!t?.trim() || t === oldTitle) return;
   try {
     const res = await authFetch(`/api/conversations/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ title: newTitle.trim() }),
+      body: JSON.stringify({ title: t.trim() }),
     });
     if (res.ok) loadConversations();
-  } catch (e) {
-    if (e.message !== 'UNAUTHORIZED') console.error(e);
-  }
+  } catch (e) {}
 }
 
 async function deleteConv(id) {
@@ -382,67 +334,49 @@ async function deleteConv(id) {
       if (currentConvId === id) { currentConvId = null; messagesContainer.innerHTML = ''; }
       loadConversations();
     }
-  } catch (e) {
-    if (e.message !== 'UNAUTHORIZED') console.error(e);
-  }
+  } catch (e) {}
 }
 
-// ============ MESSAGES ============
+// MESSAGES
 async function loadMessages(id) {
   messagesContainer.innerHTML = '';
   try {
     const res = await authFetch(`/api/conversations/${id}/messages`);
     const data = await res.json();
     (data.messages || []).forEach((m) => renderMessage(m.content, m.role));
-  } catch (e) {
-    if (e.message !== 'UNAUTHORIZED') console.error(e);
-  }
+  } catch (e) {}
 }
 
 function renderMessage(content, role) {
-  const msgDiv = document.createElement('div');
-  msgDiv.className = `message ${role}`;
-
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
   if (role === 'assistant') {
     if (typeof marked !== 'undefined') {
-      try { msgDiv.innerHTML = marked.parse(content || ''); }
-      catch { msgDiv.textContent = content || ''; }
-    } else {
-      msgDiv.textContent = content || '';
-    }
-  } else {
-    msgDiv.textContent = content || '';
-  }
+      try { div.innerHTML = marked.parse(content || ''); }
+      catch { div.textContent = content || ''; }
+    } else div.textContent = content || '';
+  } else div.textContent = content || '';
 
-  messagesContainer.appendChild(msgDiv);
+  messagesContainer.appendChild(div);
 
-  // Highlight code blocks
   if (typeof hljs !== 'undefined') {
-    msgDiv.querySelectorAll('pre code').forEach((b) => {
-      try { hljs.highlightElement(b); } catch (e) {}
-    });
+    div.querySelectorAll('pre code').forEach((b) => { try { hljs.highlightElement(b); } catch (e) {} });
   }
-
-  // Add copy buttons (after highlighting so lang class is preserved)
-  if (role === 'assistant') {
-    addCopyButtonsToMessage(msgDiv);
-  }
+  if (role === 'assistant') addCopyButtonsToMessage(div);
 
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
-  return msgDiv;
+  return div;
 }
 
-// ============ SEND MESSAGE ============
+// SEND
 window.sendMessage = async function() {
-  console.log('📤 Send called | convId:', currentConvId, '| sending:', isSending);
-
   const text = (messageInput?.value || '').trim();
   if (!text) return;
   if (isSending) return;
 
   if (!currentConvId) {
     await createNewConv();
-    if (!currentConvId) { alert('تعذر إنشاء محادثة. سجّل دخول مجدداً.'); return; }
+    if (!currentConvId) { alert('تعذر إنشاء محادثة.'); return; }
   }
 
   isSending = true;
@@ -451,10 +385,10 @@ window.sendMessage = async function() {
 
   renderMessage(text, 'user');
 
-  const typingDiv = document.createElement('div');
-  typingDiv.className = 'message assistant';
-  typingDiv.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
-  messagesContainer.appendChild(typingDiv);
+  const typing = document.createElement('div');
+  typing.className = 'message assistant';
+  typing.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+  messagesContainer.appendChild(typing);
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
   try {
@@ -463,16 +397,29 @@ window.sendMessage = async function() {
       body: JSON.stringify({ content: text }),
     });
     const data = await res.json();
-    typingDiv.remove();
+    typing.remove();
+
+    if (res.status === 429 && data.error === 'LIMIT_REACHED') {
+      renderMessage(data.message, 'assistant');
+      openSubModal(data.message);
+      return;
+    }
 
     if (res.ok && data.aiMessage) {
       renderMessage(data.aiMessage.content, 'assistant');
       loadConversations();
+      if (data.usage) {
+        updateUsageBadge({
+          isPremium: data.usage.plan === 'premium',
+          remaining: data.usage.remaining,
+          limit: data.usage.limit,
+        });
+      }
     } else {
       renderMessage('⚠️ ' + (data.error || 'خطأ'), 'assistant');
     }
   } catch (err) {
-    typingDiv.remove();
+    typing.remove();
     if (err.message === 'UNAUTHORIZED') return;
     renderMessage('⚠️ خطأ في الاتصال.', 'assistant');
   } finally {
@@ -496,13 +443,121 @@ if (messageInput) {
   });
 }
 
-// ============ AUTO REFRESH EVERY 30 MINUTES ============
-setInterval(async () => {
-  if (getToken() && getRefreshToken()) {
-    console.log('🔄 Proactive token refresh...');
-    await refreshAccessToken();
+// SUBSCRIPTION
+async function loadSubscriptionStatus() {
+  try {
+    const res = await authFetch('/api/subscription/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    updateUsageBadge(data);
+  } catch (e) {}
+}
+
+function updateUsageBadge(data) {
+  let badge = document.getElementById('usage-badge');
+  const header = document.querySelector('.chat-header');
+  if (!badge && header) {
+    badge = document.createElement('span');
+    badge.id = 'usage-badge';
+    badge.className = 'usage-badge';
+    header.appendChild(badge);
   }
+  if (!badge) return;
+
+  if (data.isPremium) {
+    badge.className = 'usage-badge premium';
+    badge.innerHTML = '<i class="fas fa-crown"></i> Premium';
+  } else {
+    const rem = data.remaining;
+    badge.className = 'usage-badge' + (rem <= 2 ? ' low' : '');
+    badge.innerHTML = `<i class="fas fa-bolt"></i> ${rem}/${data.limit}`;
+  }
+}
+
+function openSubModal(limitMsg) {
+  const modal = document.getElementById('sub-modal');
+  const msgEl = document.getElementById('sub-limit-msg');
+  if (msgEl && limitMsg) msgEl.textContent = limitMsg;
+  if (modal) modal.classList.add('show');
+  loadSubscriptionStatus();
+}
+window.openSubModal = openSubModal;
+
+function closeSubModal() {
+  const modal = document.getElementById('sub-modal');
+  if (modal) modal.classList.remove('show');
+}
+window.closeSubModal = closeSubModal;
+
+async function selectPlan(plan) {
+  const btn = document.querySelector(`.sub-plan[data-plan="${plan}"] .sub-plan-btn`);
+  const orig = btn?.innerHTML;
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري التحضير...';
+    }
+    const res = await authFetch('/api/paypal/create-order', {
+      method: 'POST',
+      body: JSON.stringify({ plan }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed.');
+
+    sessionStorage.setItem('paypal_order_id', data.orderId);
+    sessionStorage.setItem('paypal_plan', plan);
+    window.location.href = data.approvalUrl;
+  } catch (err) {
+    alert('فشل بدء الدفع: ' + err.message);
+    if (btn && orig) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+window.selectPlan = selectPlan;
+
+async function handlePayPalReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const payment = params.get('payment');
+
+  if (payment === 'success') {
+    const orderId = sessionStorage.getItem('paypal_order_id');
+    const plan = sessionStorage.getItem('paypal_plan');
+    if (orderId && plan) {
+      try {
+        const res = await authFetch('/api/paypal/capture-order', {
+          method: 'POST',
+          body: JSON.stringify({ orderId, plan }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert('🎉 مبروك! تم تفعيل اشتراكك بنجاح.');
+          closeSubModal();
+          await checkAuth();
+        } else {
+          alert('⚠️ فشل تأكيد الدفع: ' + (data.error || 'حاول لاحقاً'));
+        }
+      } catch (err) { console.error('Capture error:', err); }
+      finally {
+        sessionStorage.removeItem('paypal_order_id');
+        sessionStorage.removeItem('paypal_plan');
+      }
+    }
+    window.history.replaceState(null, '', window.location.pathname);
+  } else if (payment === 'cancel') {
+    alert('تم إلغاء الدفع.');
+    window.history.replaceState(null, '', window.location.pathname);
+  }
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('sub-modal-overlay')) closeSubModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSubModal();
+});
+
+setInterval(async () => {
+  if (getToken() && getRefreshToken()) await refreshAccessToken();
 }, 30 * 60 * 1000);
 
-// ============ INIT ============
+handlePayPalReturn();
 checkAuth();
