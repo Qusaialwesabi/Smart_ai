@@ -219,6 +219,10 @@ body {
 /* ===== USAGE BADGE (HIDDEN) ===== */
 .usage-badge {
   display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
 }
 
 .messages-container {
@@ -669,4 +673,4 @@ body {
   .chat-header { padding: 8px 12px; }
   .messages-container { padding: 8px 10px; }
   .input-area { padding: 8px 10px; }
-  }
+    }
