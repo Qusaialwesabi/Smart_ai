@@ -1,10 +1,10 @@
-// STATE
+// ============ STATE ============
 let currentConvId = null;
 let isSignUp = false;
 let isSending = false;
 let isRefreshing = false;
 
-// ELEMENTS
+// ============ ELEMENTS ============
 const authScreen = document.getElementById('auth-screen');
 const appContainer = document.getElementById('app-container');
 const authTitle = document.getElementById('auth-title');
@@ -22,17 +22,20 @@ const toggleSidebar = document.getElementById('toggle-sidebar');
 const sidebar = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebar-overlay');
 
-// TOKEN
+// ============ TOKEN MANAGEMENT ============
 function getToken() { return localStorage.getItem('supabase_token'); }
 function getRefreshToken() { return localStorage.getItem('supabase_refresh_token'); }
+
 function saveTokens(session) {
   if (session?.access_token) localStorage.setItem('supabase_token', session.access_token);
   if (session?.refresh_token) localStorage.setItem('supabase_refresh_token', session.refresh_token);
 }
+
 function clearTokens() {
   localStorage.removeItem('supabase_token');
   localStorage.removeItem('supabase_refresh_token');
 }
+
 function getAuthHeaders() {
   const t = getToken();
   return { 'Content-Type': 'application/json', ...(t ? { 'Authorization': `Bearer ${t}` } : {}) };
@@ -50,7 +53,10 @@ async function refreshAccessToken() {
       body: JSON.stringify({ refresh_token: rt }),
     });
     const data = await res.json();
-    if (res.ok && data.session?.access_token) { saveTokens(data.session); return true; }
+    if (res.ok && data.session?.access_token) {
+      saveTokens(data.session);
+      return true;
+    }
     return false;
   } catch { return false; }
   finally { isRefreshing = false; }
@@ -80,51 +86,26 @@ async function authFetch(url, options = {}) {
   return res;
 }
 
-// HELPERS
+// ============ HELPERS ============
 function escapeHtml(text) {
   const d = document.createElement('div');
   d.textContent = text || '';
   return d.innerHTML;
 }
 
-// UPDATE USAGE BADGE UI (تم تعديل شكل العرض هنا ليكون واضحاً)
-function updateUsageUI(usage) {
-  const badge = document.getElementById('usage-badge');
-  if (!badge || !usage) return;
-  if (usage.plan === 'premium') {
-    badge.className = 'usage-badge premium';
-    badge.innerHTML = '<i class="fas fa-crown"></i> Premium';
-  } else {
-    const rem = usage.remaining !== undefined ? usage.remaining : 7;
-    const limit = usage.limit || 7;
-    badge.className = rem <= 1 ? 'usage-badge low' : 'usage-badge';
-    badge.innerHTML = `<i class="fas fa-bolt"></i> متبقي: ${rem} من ${limit}`;
-  }
-}
-
-// LOAD SUBSCRIPTION STATUS
-async function loadSubscriptionStatus() {
-  try {
-    const res = await authFetch('/api/subscription/status');
-    if (res.ok) {
-      const data = await res.json();
-      updateUsageUI({ plan: data.plan, remaining: data.remaining, limit: data.limit });
-    }
-  } catch (err) {
-    console.error('Failed to load sub status', err);
-  }
-}
-
-// CODE COPY
+// ============ CODE COPY BUTTONS ============
 function addCopyButtonsToMessage(msgEl) {
   msgEl.querySelectorAll('pre').forEach((pre) => {
     if (pre.dataset.copyEnhanced === 'true') return;
     pre.dataset.copyEnhanced = 'true';
+
     const codeEl = pre.querySelector('code');
     if (!codeEl) return;
+
     let lang = 'code';
     const m = (codeEl.className || '').match(/language-(\w+)/);
     if (m) lang = m[1];
+
     const rawCode = codeEl.textContent || '';
 
     const header = document.createElement('div');
@@ -183,7 +164,7 @@ function addCopyButtonsToMessage(msgEl) {
   });
 }
 
-// SIDEBAR
+// ============ SIDEBAR ============
 function openSidebar() {
   if (sidebar) sidebar.classList.add('open');
   if (sidebarOverlay) sidebarOverlay.classList.add('show');
@@ -192,12 +173,14 @@ function closeSidebar() {
   if (sidebar) sidebar.classList.remove('open');
   if (sidebarOverlay) sidebarOverlay.classList.remove('show');
 }
-if (toggleSidebar) toggleSidebar.addEventListener('click', () => {
-  sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
-});
+if (toggleSidebar) {
+  toggleSidebar.addEventListener('click', () => {
+    sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+  });
+}
 if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
 
-// AUTH
+// ============ AUTH ============
 if (authToggleBtn) {
   authToggleBtn.addEventListener('click', () => {
     isSignUp = !isSignUp;
@@ -206,20 +189,25 @@ if (authToggleBtn) {
   });
 }
 
-function showAuth() { authScreen.style.display = 'flex'; appContainer.style.display = 'none'; }
-function showApp() { authScreen.style.display = 'none'; appContainer.style.display = 'flex'; }
+function showAuth() {
+  authScreen.style.display = 'flex';
+  appContainer.style.display = 'none';
+  appContainer.classList.remove('show');
+}
+function showApp() {
+  authScreen.style.display = 'none';
+  appContainer.style.display = 'flex';
+  appContainer.classList.add('show');
+}
 
 async function checkAuth() {
   if (!getToken()) return showAuth();
   try {
     const res = await authFetch('/api/auth/me');
     if (res.ok) {
-      const data = await res.json();
       showApp();
       loadConversations();
-      if (data.profile) {
-        updateUsageUI({ plan: data.profile.plan, remaining: data.profile.remaining, limit: data.profile.limit });
-      }
+      loadSubscriptionStatus();
     } else {
       forceLogout();
     }
@@ -259,7 +247,7 @@ if (authSubmitBtn) {
         alert('خطأ: ' + (data.error || 'تأكد من البيانات.'));
       }
     } catch {
-      alert('حدث خطأ في الاتصال.');
+      alert('خطأ في الاتصال.');
     } finally {
       authSubmitBtn.disabled = false;
       authSubmitBtn.textContent = orig;
@@ -267,90 +255,106 @@ if (authSubmitBtn) {
   });
 }
 
+if (authPassword) {
+  authPassword.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') authSubmitBtn.click();
+  });
+}
+
 if (logoutBtn) {
   logoutBtn.addEventListener('click', () => forceLogout());
 }
 
-// CONVERSATIONS
+// ============ CONVERSATIONS ============
 async function loadConversations() {
   try {
     const res = await authFetch('/api/conversations');
     if (!res.ok) return;
     const data = await res.json();
-    renderConversations(data.conversations || []);
-    if (!currentConvId && data.conversations?.length > 0) {
-      selectConversation(data.conversations[0].id);
-    } else if (!currentConvId) {
-      createNewConversation();
-    }
-  } catch (e) {}
-}
-
-function renderConversations(convs) {
-  if (!conversationsList) return;
-  conversationsList.innerHTML = '';
-  convs.forEach(c => {
-    const el = document.createElement('div');
-    el.className = `conv-item ${c.id === currentConvId ? 'active' : ''}`;
-    el.innerHTML = `
-      <div class="conv-title"><i class="fas fa-message"></i> ${escapeHtml(c.title)}</div>
-      <div class="conv-actions">
-        <i class="fas fa-trash del-btn" title="حذف"></i>
-      </div>
-    `;
-    el.addEventListener('click', (e) => {
-      if (e.target.closest('.del-btn')) {
-        e.stopPropagation();
-        deleteConversation(c.id);
-        return;
+    conversationsList.innerHTML = '';
+    if (data.conversations?.length > 0) {
+      data.conversations.forEach((c) => renderConvItem(c));
+      if (!currentConvId || !data.conversations.find((c) => c.id === currentConvId)) {
+        selectConv(data.conversations[0].id);
       }
-      selectConversation(c.id);
-      closeSidebar();
-    });
-    conversationsList.appendChild(el);
-  });
+    } else {
+      await createNewConv();
+    }
+  } catch (e) {
+    if (e.message !== 'UNAUTHORIZED') console.error(e);
+  }
 }
 
-async function createNewConversation() {
+function renderConvItem(c) {
+  const div = document.createElement('div');
+  div.className = `conv-item ${c.id === currentConvId ? 'active' : ''}`;
+  div.innerHTML = `
+    <div class="conv-title" data-id="${c.id}">
+      <i class="far fa-comments"></i>
+      <span>${escapeHtml(c.title)}</span>
+    </div>
+    <div class="conv-actions">
+      <i class="fas fa-pen edit-btn"></i>
+      <i class="fas fa-trash del-btn"></i>
+    </div>
+  `;
+  div.querySelector('.conv-title').addEventListener('click', () => selectConv(c.id));
+  div.querySelector('.edit-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    editConv(c.id, c.title);
+  });
+  div.querySelector('.del-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteConv(c.id);
+  });
+  conversationsList.appendChild(div);
+}
+
+async function createNewConv() {
   try {
     const res = await authFetch('/api/conversations', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'محادثة جديدة' }),
     });
-    if (!res.ok) return;
     const data = await res.json();
-    currentConvId = data.conversation.id;
-    messagesContainer.innerHTML = '';
-    loadConversations();
+    if (data.conversation) {
+      currentConvId = data.conversation.id;
+      loadConversations();
+      messagesContainer.innerHTML = '';
+      return currentConvId;
+    }
+  } catch (e) {}
+  return null;
+}
+
+if (newChatBtn) {
+  newChatBtn.addEventListener('click', async () => {
+    await createNewConv();
     closeSidebar();
-  } catch (e) {}
-}
-
-if (newChatBtn) newChatBtn.addEventListener('click', createNewConversation);
-
-async function selectConversation(id) {
-  currentConvId = id;
-  document.querySelectorAll('.conv-item').forEach(el => {
-    el.classList.toggle('active', el.getAttribute('onclick')?.includes(id) || false);
   });
-  loadConversations();
-  await loadMessages(id);
 }
 
-async function loadMessages(convId) {
+async function selectConv(id) {
+  currentConvId = id;
+  loadConversations();
+  loadMessages(id);
+  closeSidebar();
+}
+
+async function editConv(id, oldTitle) {
+  const t = prompt('الاسم الجديد:', oldTitle);
+  if (!t?.trim() || t === oldTitle) return;
   try {
-    const res = await authFetch(`/api/conversations/${convId}/messages`);
-    if (!res.ok) return;
-    const data = await res.json();
-    messagesContainer.innerHTML = '';
-    (data.messages || []).forEach(m => appendMessage(m.role, m.content, false));
-    scrollToBottom();
+    const res = await authFetch(`/api/conversations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ title: t.trim() }),
+    });
+    if (res.ok) loadConversations();
   } catch (e) {}
 }
 
-async function deleteConversation(id) {
-  if (!confirm('هل تريد حذف هذه المحادثة؟')) return;
+async function deleteConv(id) {
+  if (!confirm('هل أنت متأكد؟')) return;
   try {
     const res = await authFetch(`/api/conversations/${id}`, { method: 'DELETE' });
     if (res.ok) {
@@ -363,151 +367,233 @@ async function deleteConversation(id) {
   } catch (e) {}
 }
 
-// MESSAGES & SENDING
-function appendMessage(role, content, animate = true) {
+// ============ MESSAGES ============
+async function loadMessages(id) {
+  messagesContainer.innerHTML = '';
+  try {
+    const res = await authFetch(`/api/conversations/${id}/messages`);
+    const data = await res.json();
+    (data.messages || []).forEach((m) => renderMessage(m.content, m.role));
+  } catch (e) {}
+}
+
+function renderMessage(content, role) {
   const div = document.createElement('div');
   div.className = `message ${role}`;
   if (role === 'assistant') {
-    div.innerHTML = marked.parse(content || '');
-    addCopyButtonsToMessage(div);
+    if (typeof marked !== 'undefined') {
+      try { div.innerHTML = marked.parse(content || ''); }
+      catch { div.textContent = content || ''; }
+    } else {
+      div.textContent = content || '';
+    }
   } else {
-    div.textContent = content;
+    div.textContent = content || '';
   }
+
   messagesContainer.appendChild(div);
-  scrollToBottom();
+
+  if (typeof hljs !== 'undefined') {
+    div.querySelectorAll('pre code').forEach((b) => {
+      try { hljs.highlightElement(b); } catch (e) {}
+    });
+  }
+  if (role === 'assistant') addCopyButtonsToMessage(div);
+
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
   return div;
 }
 
-function appendTypingIndicator() {
-  const div = document.createElement('div');
-  div.className = 'message assistant';
-  div.id = 'typing-indicator';
-  div.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
-  messagesContainer.appendChild(div);
-  scrollToBottom();
-}
+// ============ SEND MESSAGE ============
+window.sendMessage = async function() {
+  const text = (messageInput?.value || '').trim();
+  if (!text) return;
+  if (isSending) return;
 
-function removeTypingIndicator() {
-  const el = document.getElementById('typing-indicator');
-  if (el) el.remove();
-}
-
-function scrollToBottom() {
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-async function sendMessage() {
-  const text = messageInput.value.trim();
-  if (!text || isSending) return;
   if (!currentConvId) {
-    await createNewConversation();
+    await createNewConv();
+    if (!currentConvId) {
+      alert('تعذر إنشاء محادثة.');
+      return;
+    }
   }
 
-  messageInput.value = '';
   isSending = true;
-  sendBtn.disabled = true;
+  if (sendBtn) sendBtn.disabled = true;
+  messageInput.value = '';
 
-  appendMessage('user', text);
-  appendTypingIndicator();
+  renderMessage(text, 'user');
+
+  const typing = document.createElement('div');
+  typing.className = 'message assistant';
+  typing.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+  messagesContainer.appendChild(typing);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
   try {
     const res = await authFetch(`/api/conversations/${currentConvId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: text }),
     });
-
-    removeTypingIndicator();
     const data = await res.json();
+    typing.remove();
 
-    if (res.status === 429) {
-      openSubModal(data.message || 'انتهت رسائلك المجانية لهذا اليوم.');
-      updateUsageUI({ plan: 'free', remaining: 0, limit: 7 });
+    // Handle limit reached
+    if (res.status === 429 && data.error === 'LIMIT_REACHED') {
+      renderMessage(data.message, 'assistant');
+      openSubModal(data.message);
       return;
     }
 
-    if (!res.ok) {
-      appendMessage('assistant', '⚠️ حدث خطأ أثناء إرسال الرسالة.');
-      return;
+    if (res.ok && data.aiMessage) {
+      renderMessage(data.aiMessage.content, 'assistant');
+      loadConversations();
+      // Usage badge update is now a no-op (hidden)
+      if (data.usage) {
+        updateUsageBadge({
+          isPremium: data.usage.plan === 'premium',
+          remaining: data.usage.remaining,
+          limit: data.usage.limit,
+        });
+      }
+    } else {
+      renderMessage('⚠️ ' + (data.error || 'خطأ'), 'assistant');
     }
-
-    appendMessage('assistant', data.aiMessage.content);
-    if (data.usage) {
-      updateUsageUI(data.usage);
-    }
-    loadConversations();
   } catch (err) {
-    removeTypingIndicator();
-    appendMessage('assistant', '⚠️ خطأ في الاتصال بالسيرفر.');
+    typing.remove();
+    if (err.message === 'UNAUTHORIZED') return;
+    renderMessage('⚠️ خطأ في الاتصال.', 'assistant');
   } finally {
     isSending = false;
-    sendBtn.disabled = false;
-    messageInput.focus();
+    if (sendBtn) sendBtn.disabled = false;
+    messageInput?.focus();
   }
+};
+
+if (sendBtn) {
+  sendBtn.onclick = window.sendMessage;
+  sendBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    window.sendMessage();
+  });
 }
 
-if (sendBtn) sendBtn.addEventListener('click', sendMessage);
 if (messageInput) {
-  messageInput.addEventListener('keydown', (e) => {
+  messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      window.sendMessage();
     }
   });
 }
 
-// SUBSCRIPTION MODAL FUNCTIONS
-function openSubModal(msg) {
+// ============ SUBSCRIPTION ============
+async function loadSubscriptionStatus() {
+  try {
+    const res = await authFetch('/api/subscription/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    // Just check - badge hidden but modal will still work
+    updateUsageBadge(data);
+  } catch (e) {}
+}
+
+// Badge is HIDDEN from users - this does nothing
+function updateUsageBadge(data) {
+  // Intentionally empty - badge hidden from users
+  // The backend still tracks message count and shows modal at limit
+  return;
+}
+
+function openSubModal(limitMsg) {
   const modal = document.getElementById('sub-modal');
-  const limitMsg = document.getElementById('sub-limit-msg');
-  if (limitMsg && msg) limitMsg.textContent = msg;
+  const msgEl = document.getElementById('sub-limit-msg');
+  if (msgEl && limitMsg) msgEl.textContent = limitMsg;
   if (modal) modal.classList.add('show');
 }
+window.openSubModal = openSubModal;
 
 function closeSubModal() {
   const modal = document.getElementById('sub-modal');
   if (modal) modal.classList.remove('show');
 }
+window.closeSubModal = closeSubModal;
 
 async function selectPlan(plan) {
+  const btn = document.querySelector(`.sub-plan[data-plan="${plan}"] .sub-plan-btn`);
+  const orig = btn?.innerHTML;
   try {
-    const btn = document.querySelector(`.sub-plan[data-plan="${plan}"] .sub-plan-btn`);
-    if (btn) { btn.disabled = true; btn.textContent = 'جاري التحويل...'; }
-
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري التحضير...';
+    }
     const res = await authFetch('/api/paypal/create-order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plan }),
     });
     const data = await res.json();
-    if (res.ok && data.approvalUrl) {
-      window.location.href = data.approvalUrl;
-    } else {
-      alert(data.error || 'فشل بدء الدفع.');
-      if (btn) { btn.disabled = false; btn.textContent = 'اشترك الآن'; }
-    }
+    if (!res.ok) throw new Error(data.error || 'Failed.');
+
+    sessionStorage.setItem('paypal_order_id', data.orderId);
+    sessionStorage.setItem('paypal_plan', plan);
+    window.location.href = data.approvalUrl;
   } catch (err) {
-    alert('حدث خطأ في الاتصال.');
+    alert('فشل بدء الدفع: ' + err.message);
+    if (btn && orig) {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  }
+}
+window.selectPlan = selectPlan;
+
+async function handlePayPalReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const payment = params.get('payment');
+
+  if (payment === 'success') {
+    const orderId = sessionStorage.getItem('paypal_order_id');
+    const plan = sessionStorage.getItem('paypal_plan');
+    if (orderId && plan) {
+      try {
+        const res = await authFetch('/api/paypal/capture-order', {
+          method: 'POST',
+          body: JSON.stringify({ orderId, plan }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert('🎉 مبروك! تم تفعيل اشتراكك بنجاح.');
+          closeSubModal();
+          await checkAuth();
+        } else {
+          alert('⚠️ فشل تأكيد الدفع: ' + (data.error || 'حاول لاحقاً'));
+        }
+      } catch (err) {
+        console.error('Capture error:', err);
+      } finally {
+        sessionStorage.removeItem('paypal_order_id');
+        sessionStorage.removeItem('paypal_plan');
+      }
+    }
+    window.history.replaceState(null, '', window.location.pathname);
+  } else if (payment === 'cancel') {
+    alert('تم إلغاء الدفع.');
+    window.history.replaceState(null, '', window.location.pathname);
   }
 }
 
-async function checkPaymentReturn() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const paymentStatus = urlParams.get('payment');
-  const token = urlParams.get('token');
-
-  if (paymentStatus === 'success' && token) {
-    window.history.replaceState({}, document.title, window.location.pathname);
-    alert('تم الدفع بنجاح! يتم تفعيل اشتراكك...');
-    loadSubscriptionStatus();
-  } else if (paymentStatus === 'cancel') {
-    window.history.replaceState({}, document.title, window.location.pathname);
-    alert('تم إلغاء عملية الدفع.');
-  }
-}
-
-// INIT
-document.addEventListener('DOMContentLoaded', () => {
-  checkAuth();
-  checkPaymentReturn();
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('sub-modal-overlay')) closeSubModal();
 });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSubModal();
+});
+
+// ============ AUTO REFRESH TOKEN ============
+setInterval(async () => {
+  if (getToken() && getRefreshToken()) await refreshAccessToken();
+}, 30 * 60 * 1000);
+
+// ============ INIT ============
+handlePayPalReturn();
+checkAuth();
