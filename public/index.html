@@ -3,11 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="google-site-verification" content="yIzZIjunWiuZUMIpgyVx7PHIP-tTVI1eVfAwgdhjdxM" />
   <meta name="theme-color" content="#0f172a">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Smart AI</title>
+  <meta name="description" content="Smart AI — مساعدك الذكي متعدد المحادثات. دردشة ذكاء اصطناعي قوية للمبرمجين والطلاب، مع كتابة الأكواد، تلخيص النصوص، والإجابة على كل أسئلتك.">
+  <meta name="keywords" content="ذكاء اصطناعي, شات بوت, مساعد برمجي, AI, ChatGPT, Gemini, دردشة ذكية">
+  <meta name="author" content="Smart AI">
+  <meta property="og:title" content="Smart AI — مساعدك الذكي">
+  <meta property="og:description" content="دردشة ذكاء اصطناعي قوية للمبرمجين والطلاب">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://qusai-alwesabi.onrender.com">
+  <title>Smart AI — مساعدك الذكي في البرمجة والدراسة</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -47,6 +55,17 @@
       width: 100%;
       max-width: 400px;
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .auth-logo {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .auth-logo i {
+      font-size: 2.5rem;
+      background: linear-gradient(135deg, #a855f7, #ec4899);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
     .auth-box h2 {
       text-align: center;
@@ -96,17 +115,14 @@
     #auth-toggle-btn:hover { color: #a855f7; }
 
     /* ===== APP ===== */
-    #app-container {
-      display: none;
+    .app-container {
+      display: flex;
       height: 100vh;
       height: 100dvh;
       width: 100vw;
       overflow: hidden;
       position: relative;
     }
-    #app-container.show { display: flex; }
-
-    /* Sidebar */
     .sidebar {
       width: 280px;
       min-width: 280px;
@@ -124,7 +140,7 @@
       border-bottom: 1px solid #334155;
       flex-shrink: 0;
     }
-    .new-chat-btn {
+    .sidebar-header button {
       width: 100%;
       padding: 11px;
       border-radius: 10px;
@@ -134,7 +150,6 @@
       font-weight: 600;
       cursor: pointer;
       font-size: 0.9rem;
-      font-family: inherit;
     }
     .conversations-list {
       flex: 1;
@@ -169,7 +184,6 @@
       align-items: center;
       gap: 6px;
       min-width: 0;
-      color: #e2e8f0;
     }
     .conv-actions { display: flex; gap: 6px; flex-shrink: 0; }
     .conv-actions i {
@@ -187,7 +201,7 @@
       border-top: 1px solid #334155;
       flex-shrink: 0;
     }
-    .logout-btn {
+    .sidebar-footer button {
       width: 100%;
       padding: 11px;
       border-radius: 10px;
@@ -196,13 +210,11 @@
       color: #94a3b8;
       cursor: pointer;
       font-size: 0.85rem;
-      font-family: inherit;
       transition: all 0.15s;
     }
-    .logout-btn:hover { background: #334155; color: #f87171; }
+    .sidebar-footer button:hover { background: #334155; color: #f87171; }
 
-    /* Chat area */
-    .chat-main {
+    .chat-area {
       flex: 1;
       display: flex;
       flex-direction: column;
@@ -210,7 +222,6 @@
       height: 100vh;
       height: 100dvh;
       overflow: hidden;
-      background: #0f172a;
     }
     .chat-header {
       display: flex;
@@ -236,37 +247,18 @@
       display: none;
       padding: 6px;
       border-radius: 8px;
-      font-family: inherit;
     }
     #toggle-sidebar:active { background: #334155; }
 
-    /* Usage badge */
+    /* ===== USAGE BADGE (HIDDEN) ===== */
     .usage-badge {
-      font-size: 0.7rem;
-      padding: 4px 10px;
-      border-radius: 100px;
-      background: rgba(168, 85, 247, 0.15);
-      color: #c084fc;
-      border: 1px solid rgba(168, 85, 247, 0.3);
-      font-weight: 600;
-      margin-right: auto;
-      white-space: nowrap;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .usage-badge.premium {
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(236, 72, 153, 0.2));
-      color: #fbbf24;
-      border-color: rgba(245, 158, 11, 0.4);
-    }
-    .usage-badge.low {
-      background: rgba(248, 113, 113, 0.15);
-      color: #f87171;
-      border-color: rgba(248, 113, 113, 0.3);
+      display: none !important;
+      visibility: hidden !important;
+      width: 0 !important;
+      height: 0 !important;
+      overflow: hidden !important;
     }
 
-    /* Messages */
     .messages-container {
       flex: 1;
       overflow-y: auto;
@@ -316,7 +308,7 @@
     .message.assistant strong { color: #c084fc; font-weight: 700; }
     .message.assistant a { color: #a855f7; text-decoration: underline; }
 
-    /* Code blocks */
+    /* CODE BLOCKS */
     .message.assistant pre {
       background: #0b1220;
       padding: 0;
@@ -367,6 +359,7 @@
       border-color: #a855f7;
       color: #fff;
     }
+    .copy-code-btn:active { transform: scale(0.95); }
     .copy-code-btn.copied {
       background: rgba(34, 197, 94, 0.2);
       border-color: #22c55e;
@@ -441,60 +434,41 @@
     }
 
     /* Input */
-    .chat-input-area {
-      padding: 12px 14px;
-      padding-bottom: max(12px, env(safe-area-inset-bottom));
-      background: #0f172a;
-      flex-shrink: 0;
-    }
-    .input-wrapper {
+    .input-area {
       display: flex;
       gap: 8px;
-      align-items: flex-end;
+      padding: 12px 14px;
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+      border-top: 1px solid #334155;
       background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 16px;
-      padding: 8px 12px;
-      max-width: 800px;
-      margin: 0 auto;
-      transition: border-color 0.2s;
+      flex-shrink: 0;
     }
-    .input-wrapper:focus-within {
-      border-color: #a855f7;
-      box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1);
-    }
-    #message-input {
+    .input-area input {
       flex: 1;
       min-width: 0;
-      background: none;
-      border: none;
+      padding: 11px 14px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      background: #0f172a;
       color: #e2e8f0;
       font-size: 16px;
-      font-family: inherit;
-      resize: none;
-      max-height: 140px;
-      line-height: 1.5;
-      padding: 8px 4px;
       outline: none;
+      transition: border-color 0.2s;
     }
-    #message-input::placeholder { color: #64748b; }
-    #send-btn {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+    .input-area input:focus { border-color: #a855f7; }
+    .input-area button {
+      padding: 0 18px;
+      border-radius: 12px;
       border: none;
       background: linear-gradient(135deg, #6366f1, #a855f7);
       color: #fff;
       cursor: pointer;
       font-size: 1rem;
+      transition: transform 0.15s;
       flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.15s, opacity 0.15s;
     }
-    #send-btn:hover:not(:disabled) { transform: translateY(-1px); }
-    #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .input-area button:hover { transform: translateY(-1px); }
+    .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Overlay */
     .sidebar-overlay {
@@ -552,6 +526,7 @@
       align-items: center;
       justify-content: center;
       font-size: 0.9rem;
+      transition: all 0.15s;
     }
     .sub-modal-close:hover { background: rgba(248, 113, 113, 0.2); color: #f87171; }
     .sub-modal-icon {
@@ -593,7 +568,6 @@
       border-radius: 16px;
       padding: 16px;
       transition: all 0.2s;
-      text-align: right;
     }
     .sub-plan:hover { border-color: #a855f7; }
     .sub-plan-best { border-color: #a855f7; box-shadow: 0 0 25px rgba(168, 85, 247, 0.2); }
@@ -709,13 +683,13 @@
       .code-block-content { padding: 9px; }
       .code-block-header { padding: 5px 8px; }
       .copy-code-btn { padding: 4px 8px; font-size: 0.65rem; }
-      .chat-input-area {
+      .input-area {
         padding: 10px;
         padding-bottom: max(10px, env(safe-area-inset-bottom));
+        gap: 6px;
       }
-      .input-wrapper { padding: 6px 10px; }
-      #message-input { font-size: 16px; padding: 8px 2px; }
-      #send-btn { width: 38px; height: 38px; }
+      .input-area input { padding: 10px 12px; font-size: 16px; }
+      .input-area button { padding: 0 16px; font-size: 0.95rem; }
       .conv-item { padding: 12px 10px; }
       .conv-title { font-size: 0.86rem; }
       .conv-actions { opacity: 1; }
@@ -732,7 +706,7 @@
     @media (max-height: 500px) and (orientation: landscape) {
       .chat-header { padding: 8px 12px; }
       .messages-container { padding: 8px 10px; }
-      .chat-input-area { padding: 8px 10px; }
+      .input-area { padding: 8px 10px; }
     }
   </style>
 </head>
@@ -741,6 +715,9 @@
   <!-- AUTH SCREEN -->
   <div id="auth-screen" class="auth-container">
     <div class="auth-box">
+      <div class="auth-logo">
+        <i class="fas fa-robot"></i>
+      </div>
       <h2 id="auth-title">تسجيل الدخول</h2>
       <input type="email" id="auth-email" placeholder="البريد الإلكتروني" autocomplete="email" inputmode="email">
       <input type="password" id="auth-password" placeholder="كلمة المرور" autocomplete="current-password" minlength="6">
@@ -750,24 +727,24 @@
   </div>
 
   <!-- MAIN APP -->
-  <div id="app-container">
+  <div id="app-container" class="app-container" style="display: none;">
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <button id="new-chat-btn" class="new-chat-btn" type="button">
+        <button id="new-chat-btn" type="button">
           <i class="fas fa-plus"></i> محادثة جديدة
         </button>
       </div>
       <div id="conversations-list" class="conversations-list"></div>
       <div class="sidebar-footer">
-        <button id="logout-btn" class="logout-btn" type="button">
+        <button id="logout-btn" type="button">
           <i class="fas fa-sign-out-alt"></i> تسجيل الخروج
         </button>
       </div>
     </aside>
 
-    <main class="chat-main">
+    <main class="chat-area">
       <header class="chat-header">
         <button id="toggle-sidebar" type="button" aria-label="القائمة">
           <i class="fas fa-bars"></i>
@@ -780,13 +757,11 @@
 
       <div id="messages-container" class="messages-container"></div>
 
-      <div class="chat-input-area">
-        <div class="input-wrapper">
-          <textarea id="message-input" rows="1" placeholder="اكتب رسالتك..." autocomplete="off" enterkeyhint="send"></textarea>
-          <button id="send-btn" type="button" aria-label="إرسال" onclick="window.sendMessage && window.sendMessage()">
-            <i class="fas fa-paper-plane"></i>
-          </button>
-        </div>
+      <div class="input-area">
+        <input type="text" id="message-input" placeholder="اكتب رسالتك..." autocomplete="off" enterkeyhint="send">
+        <button id="send-btn" type="button" aria-label="إرسال" onclick="window.sendMessage && window.sendMessage()">
+          <i class="fas fa-paper-plane"></i>
+        </button>
       </div>
     </main>
   </div>
