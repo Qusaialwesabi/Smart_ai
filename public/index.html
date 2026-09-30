@@ -8,14 +8,14 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="description" content="Smart AI — مساعدك الذكي متعدد المحادثات. دردشة ذكاء اصطناعي قوية للمبرمجين والطلاب، مع كتابة الأكواد، تلخيص النصوص، والإجابة على كل أسئلتك.">
-  <meta name="keywords" content="ذكاء اصطناعي, شات بوت, مساعد برمجي, AI, ChatGPT, Gemini, دردشة ذكية">
+  <meta name="description" content="Smart AI — مساعدك الذكي للبرمجة. اكتب، أصلح، اشرح وحسّن الكود باستخدام الذكاء الاصطناعي.">
+  <meta name="keywords" content="ذكاء اصطناعي, مساعد برمجي, AI, برمجة, كتابة كود, إصلاح أخطاء, Gemini">
   <meta name="author" content="Smart AI">
-  <meta property="og:title" content="Smart AI — مساعدك الذكي">
-  <meta property="og:description" content="دردشة ذكاء اصطناعي قوية للمبرمجين والطلاب">
+  <meta property="og:title" content="Smart AI — مساعدك البرمجي">
+  <meta property="og:description" content="مساعد ذكاء اصطناعي للمبرمجين لكتابة وشرح وإصلاح وتحسين الكود.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://qusai-alwesabi.onrender.com">
-  <title>Smart AI — مساعدك الذكي في البرمجة والدراسة</title>
+  <title>Smart AI — مساعدك البرمجي بالذكاء الاصطناعي</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -56,10 +56,7 @@
       max-width: 400px;
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
-    .auth-logo {
-      text-align: center;
-      margin-bottom: 20px;
-    }
+    .auth-logo { text-align: center; margin-bottom: 20px; }
     .auth-logo i {
       font-size: 2.5rem;
       background: linear-gradient(135deg, #a855f7, #ec4899);
@@ -250,13 +247,106 @@
     }
     #toggle-sidebar:active { background: #334155; }
 
-    /* ===== USAGE BADGE (HIDDEN) ===== */
+    /* ===== USAGE BADGE ===== */
     .usage-badge {
-      display: none !important;
-      visibility: hidden !important;
-      width: 0 !important;
-      height: 0 !important;
-      overflow: hidden !important;
+      margin-right: auto;
+      display: inline-flex !important;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: rgba(168, 85, 247, 0.12);
+      border: 1px solid rgba(168, 85, 247, 0.28);
+      color: #c084fc;
+      font-size: 0.72rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .usage-badge i { color: #f59e0b; }
+
+    /* ===== WELCOME / EMPTY STATE ===== */
+    .welcome-screen {
+      width: min(760px, 100%);
+      margin: auto;
+      padding: 24px 16px 28px;
+      text-align: center;
+    }
+    .welcome-icon {
+      width: 66px;
+      height: 66px;
+      margin: 0 auto 14px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      box-shadow: 0 12px 35px rgba(99,102,241,.22);
+      font-size: 1.7rem;
+      color: #fff;
+    }
+    .welcome-screen h1 {
+      font-size: clamp(1.35rem, 4vw, 1.8rem);
+      color: #f8fafc;
+      margin-bottom: 7px;
+      font-weight: 800;
+    }
+    .welcome-screen .welcome-subtitle {
+      color: #94a3b8;
+      font-size: .92rem;
+      margin-bottom: 18px;
+    }
+    .free-messages-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 18px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(34,197,94,.10);
+      border: 1px solid rgba(34,197,94,.22);
+      color: #86efac;
+      font-size: .78rem;
+      font-weight: 700;
+    }
+    .prompt-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      text-align: right;
+    }
+    .prompt-card {
+      border: 1px solid #334155;
+      background: rgba(30,41,59,.72);
+      color: #e2e8f0;
+      border-radius: 13px;
+      padding: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      text-align: right;
+      transition: border-color .15s, transform .15s, background .15s;
+    }
+    .prompt-card:hover {
+      border-color: #a855f7;
+      background: rgba(168,85,247,.08);
+      transform: translateY(-1px);
+    }
+    .prompt-card:active { transform: scale(.99); }
+    .prompt-card i {
+      color: #c084fc;
+      margin-left: 7px;
+      width: 18px;
+      text-align: center;
+    }
+    .prompt-card span {
+      font-size: .84rem;
+      font-weight: 700;
+    }
+    .prompt-card small {
+      display: block;
+      color: #94a3b8;
+      font-size: .72rem;
+      margin-top: 5px;
+      padding-right: 25px;
     }
 
     .messages-container {
@@ -386,7 +476,7 @@
       padding: 2px 6px;
       border-radius: 4px;
       font-size: 0.86em;
-      font-family: 'Courier New', Consolas, monospace;
+      font-family: 'Courier New', Consolas, Monaco, monospace;
       color: #e9d5ff;
       direction: ltr;
     }
@@ -676,7 +766,15 @@
         padding-top: max(10px, env(safe-area-inset-top));
       }
       .chat-header h3 { font-size: 0.95rem; }
+      .usage-badge { font-size: 0.65rem; padding: 4px 7px; }
       .messages-container { padding: 12px 10px; gap: 10px; }
+      .welcome-screen { padding: 18px 6px 22px; }
+      .welcome-icon { width: 58px; height: 58px; border-radius: 17px; font-size: 1.45rem; }
+      .welcome-screen .welcome-subtitle { font-size: .84rem; }
+      .prompt-grid { gap: 8px; }
+      .prompt-card { padding: 11px 9px; }
+      .prompt-card span { font-size: .76rem; }
+      .prompt-card small { font-size: .66rem; }
       .message { max-width: 92%; padding: 10px 13px; font-size: 0.9rem; }
       .message.assistant pre { font-size: 0.74rem; }
       .message.assistant pre code { font-size: 0.74rem; }
@@ -702,6 +800,7 @@
       .sub-modal { padding: 22px 16px; }
       .sub-modal-title { font-size: 1.25rem; }
       .sub-price-amount { font-size: 1.6rem; }
+      .prompt-grid { grid-template-columns: 1fr; }
     }
     @media (max-height: 500px) and (orientation: landscape) {
       .chat-header { padding: 8px 12px; }
@@ -751,14 +850,51 @@
         </button>
         <h3>Smart AI</h3>
         <div id="usage-badge" class="usage-badge">
-          <i class="fas fa-bolt"></i> ...
+          <i class="fas fa-bolt"></i> 7 رسائل مجانية
         </div>
       </header>
 
-      <div id="messages-container" class="messages-container"></div>
+      <div id="messages-container" class="messages-container">
+        <!-- تظهر فقط عند عدم وجود رسائل -->
+        <section id="welcome-screen" class="welcome-screen" aria-label="ابدأ مع Smart AI">
+          <div class="welcome-icon">
+            <i class="fas fa-code"></i>
+          </div>
+
+          <h1>مرحبًا بك في Smart AI</h1>
+          <p class="welcome-subtitle">مساعدك البرمجي بالذكاء الاصطناعي — اكتب، أصلح، اشرح وحسّن كودك.</p>
+
+          <div class="free-messages-note">
+            <i class="fas fa-gift"></i>
+            لديك 7 رسائل مجانية لتجربة Smart AI
+          </div>
+
+          <div class="prompt-grid">
+            <button class="prompt-card" type="button" data-prompt="أصلح هذا الخطأ في الكود واشرح لي سبب الخطأ وكيف أصلحه خطوة بخطوة.">
+              <span><i class="fas fa-bug"></i> أصلح هذا الخطأ</span>
+              <small>أرسل رسالة الخطأ والكود</small>
+            </button>
+
+            <button class="prompt-card" type="button" data-prompt="اكتب لي كودًا نظيفًا ومرتبًا لتنفيذ هذه الفكرة، واشرح لي أهم أجزاء الكود.">
+              <span><i class="fas fa-terminal"></i> اكتب لي كودًا</span>
+              <small>حوّل فكرتك إلى كود</small>
+            </button>
+
+            <button class="prompt-card" type="button" data-prompt="اشرح لي هذا الكود بالتفصيل وبطريقة بسيطة، ووضح وظيفة كل جزء فيه.">
+              <span><i class="fas fa-book-open"></i> اشرح الكود</span>
+              <small>افهم الكود بسهولة</small>
+            </button>
+
+            <button class="prompt-card" type="button" data-prompt="حسّن هذا الكود واجعله أنظف وأفضل أداءً، واذكر لي التغييرات التي أجريتها.">
+              <span><i class="fas fa-bolt"></i> حسّن الكود</span>
+              <small>تنظيف وتحسين الكود</small>
+            </button>
+          </div>
+        </section>
+      </div>
 
       <div class="input-area">
-        <input type="text" id="message-input" placeholder="اكتب رسالتك..." autocomplete="off" enterkeyhint="send">
+        <input type="text" id="message-input" placeholder="اكتب سؤالك البرمجي..." autocomplete="off" enterkeyhint="send">
         <button id="send-btn" type="button" aria-label="إرسال" onclick="window.sendMessage && window.sendMessage()">
           <i class="fas fa-paper-plane"></i>
         </button>
@@ -779,7 +915,7 @@
 
       <h2 class="sub-modal-title">ترقّى إلى Premium</h2>
       <p class="sub-modal-subtitle" id="sub-limit-msg">
-        انتهت رسائلك المجانية لهذا اليوم
+        انتهت رسائلك المجانية
       </p>
 
       <div class="sub-plans">
@@ -830,5 +966,38 @@
   </div>
 
   <script src="app.js"></script>
+
+  <!-- وظائف الواجهة فقط: لا تتدخل في إرسال الرسائل أو الـ API -->
+  <script>
+    (function () {
+      const messagesContainer = document.getElementById('messages-container');
+      const welcomeScreen = document.getElementById('welcome-screen');
+      const input = document.getElementById('message-input');
+
+      function updateWelcomeVisibility() {
+        if (!welcomeScreen || !messagesContainer) return;
+        const hasMessages = messagesContainer.querySelector('.message');
+        welcomeScreen.style.display = hasMessages ? 'none' : '';
+      }
+
+      // أزرار الاقتراحات: تضع السؤال في خانة الكتابة فقط.
+      document.querySelectorAll('.prompt-card').forEach(function (button) {
+        button.addEventListener('click', function () {
+          if (!input) return;
+          input.value = button.dataset.prompt || '';
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        });
+      });
+
+      // إذا كان app.js يضيف/يحذف الرسائل ديناميكيًا، نخفي شاشة البداية تلقائيًا.
+      if (messagesContainer && window.MutationObserver) {
+        const observer = new MutationObserver(updateWelcomeVisibility);
+        observer.observe(messagesContainer, { childList: true, subtree: true });
+      }
+
+      updateWelcomeVisibility();
+    })();
+  </script>
 </body>
-  </html>
+</html>
