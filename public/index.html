@@ -263,6 +263,8 @@
       white-space: nowrap;
     }
     .usage-badge i { color: #f59e0b; }
+    /* لا نعرض عدد الرسائل المجانية للمستخدم */
+    .usage-badge { display: none !important; visibility: hidden !important; }
 
     /* ===== WELCOME / EMPTY STATE ===== */
     .welcome-screen {
@@ -849,13 +851,11 @@
           <i class="fas fa-bars"></i>
         </button>
         <h3>Smart AI</h3>
-        <div id="usage-badge" class="usage-badge">
-          <i class="fas fa-bolt"></i> 7 رسائل مجانية
-        </div>
+        <div id="usage-badge" class="usage-badge" aria-hidden="true"></div>
       </header>
 
       <div id="messages-container" class="messages-container">
-        <!-- تظهر فقط عند عدم وجود رسائل -->
+        <!-- شاشة ترحيب ثابتة للمحادثة الجديدة -->
         <section id="welcome-screen" class="welcome-screen" aria-label="ابدأ مع Smart AI">
           <div class="welcome-icon">
             <i class="fas fa-code"></i>
@@ -863,11 +863,6 @@
 
           <h1>مرحبًا بك في Smart AI</h1>
           <p class="welcome-subtitle">مساعدك البرمجي بالذكاء الاصطناعي — اكتب، أصلح، اشرح وحسّن كودك.</p>
-
-          <div class="free-messages-note">
-            <i class="fas fa-gift"></i>
-            لديك 7 رسائل مجانية لتجربة Smart AI
-          </div>
 
           <div class="prompt-grid">
             <button class="prompt-card" type="button" data-prompt="أصلح هذا الخطأ في الكود واشرح لي سبب الخطأ وكيف أصلحه خطوة بخطوة.">
@@ -973,11 +968,16 @@
       const messagesContainer = document.getElementById('messages-container');
       const welcomeScreen = document.getElementById('welcome-screen');
       const input = document.getElementById('message-input');
+      const newChatBtn = document.getElementById('new-chat-btn');
 
-      function updateWelcomeVisibility() {
-        if (!welcomeScreen || !messagesContainer) return;
-        const hasMessages = messagesContainer.querySelector('.message');
-        welcomeScreen.style.display = hasMessages ? 'none' : '';
+      // شاشة البداية تبقى ثابتة في المحادثة الفارغة.
+      // لا تختفي بسبب رسالة ترحيب/تحميل يضيفها app.js تلقائياً.
+      function showWelcome() {
+        if (welcomeScreen) welcomeScreen.style.display = '';
+      }
+
+      function hideWelcome() {
+        if (welcomeScreen) welcomeScreen.style.display = 'none';
       }
 
       // أزرار الاقتراحات: تضع السؤال في خانة الكتابة فقط.
@@ -990,13 +990,54 @@
         });
       });
 
-      // إذا كان app.js يضيف/يحذف الرسائل ديناميكيًا، نخفي شاشة البداية تلقائيًا.
+      // نخفي شاشة البداية فقط عندما يرسل المستخدم فعلياً.
+      // لا نعتمد على وجود رسالة assistant حتى لا تختفي الشاشة فور فتح التطبيق.
+      if (window.sendMessage) {
+        const originalSendMessage = window.sendMessage;
+        window.sendMessage = function () {
+          const value = input ? input.value.trim() : '';
+          if (value) hideWelcome();
+          return originalSendMessage.apply(this, arguments);
+        };
+      }
+
+      // في حال app.js يستبدل window.sendMessage بعد تحميل الصفحة، نعيد التغليف مرة واحدة عند الحاجة.
+      let wrapped = !!window.sendMessage;
+      let attempts = 0;
+      const wrapTimer = setInterval(function () {
+        attempts++;
+        if (window.sendMessage && !window.sendMessage.__smartAiWrapped) {
+          const original = window.sendMessage;
+          const wrappedSend = function () {
+            const value = input ? input.value.trim() : '';
+            if (value) hideWelcome();
+            return original.apply(this, arguments);
+          };
+          wrappedSend.__smartAiWrapped = true;
+          window.sendMessage = wrappedSend;
+        }
+        if (attempts >= 30) clearInterval(wrapTimer);
+      }, 100);
+
+      // عند إنشاء محادثة جديدة، أظهر شاشة البداية من جديد.
+      if (newChatBtn) {
+        newChatBtn.addEventListener('click', function () {
+          setTimeout(showWelcome, 50);
+        });
+      }
+
+      // إذا أضاف التطبيق رسالة من المستخدم مباشرة، نخفي شاشة البداية.
       if (messagesContainer && window.MutationObserver) {
-        const observer = new MutationObserver(updateWelcomeVisibility);
+        const observer = new MutationObserver(function () {
+          if (messagesContainer.querySelector('.message.user')) {
+            hideWelcome();
+          }
+        });
         observer.observe(messagesContainer, { childList: true, subtree: true });
       }
 
-      updateWelcomeVisibility();
+      // لا نستدعي أي فحص يخفي الشاشة لمجرد وجود رسالة assistant.
+      showWelcome();
     })();
   </script>
 </body>
